@@ -2,6 +2,8 @@ package site
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -9,8 +11,50 @@ import (
 	"xgift/internal/checkout"
 )
 
+func loadPaymentsEnabled(dir string) bool {
+	path := filepath.Join(dir, "payments-enabled")
+	if b, err := os.ReadFile(path); err == nil {
+		return strings.TrimSpace(string(b)) == "true"
+	}
+	return os.Getenv("XGIFT_PAYMENTS_ENABLED") == "true"
+}
+
+func (s *server) paymentEnabled() bool {
+	s.paymentsMu.RLock()
+	defer s.paymentsMu.RUnlock()
+	return s.payments
+}
+
+func (s *server) setPayments(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !decode(w, r, &q) {
+		return
+	}
+	if q.Enabled {
+		if err := checkout.CheckPaymentConfiguration(s.vault); err != nil {
+			message(w, 400, "无法开启真实付款："+err.Error())
+			return
+		}
+	}
+	path := filepath.Join(os.Getenv("XGIFT_DATA_DIR"), "payments-enabled")
+	value := "false\\n"
+	if q.Enabled {
+		value = "true\\n"
+	}
+	if err := os.WriteFile(path, []byte(value), 0600); err != nil {
+		message(w, 500, "付款开关保存失败，请稍后重试。")
+		return
+	}
+	s.paymentsMu.Lock()
+	s.payments = q.Enabled
+	s.paymentsMu.Unlock()
+	reply(w, 200, map[string]any{"payments_enabled": q.Enabled})
+}
+
 func (s *server) paymentsAvailable() (bool, error) {
-	if !s.payments {
+	if !s.paymentEnabled() {
 		return false, nil
 	}
 	paused, err := checkout.PaymentPaused(s.vault)
