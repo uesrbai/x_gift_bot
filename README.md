@@ -38,22 +38,22 @@ npm run preview
 
 1. 在 Zeabur 新建 Project。
 2. 选择 **Deploy New Service → GitHub**，选择本仓库。
-3. Zeabur 会自动检测根目录的 `Dockerfile` 并使用 Docker 构建。urlZeabur Dockerfile 部署文档https://zeabur.com/docs/en-US/deploy/methods/dockerfile
+3. Zeabur 会自动检测根目录的 `Dockerfile` 并使用 Docker 构建。Zeabur 官方 Dockerfile 部署文档
 4. 绑定一个 Zeabur 域名或自己的域名。
 5. 确认服务环境变量中的 `XGIFT_ORIGIN` 与实际 HTTPS 域名完全一致。
 6. 首次启动后，从服务日志保存自动生成的管理员密码。
 
-仓库根目录的 `zeabur.yaml` 同时定义了正式 Template：它会创建 HTTP 8080 服务，并把 `/app/data` 与 `/app/config` 配置为持久化 Volume，因此 SQLite 数据、管理员密码和 vault 密码不会因重新部署而丢失。Zeabur 的 Template 格式支持 GitHub 服务、域名变量和 Volumes。citeturn0search0turn0search1
+仓库根目录的 `zeabur.yaml` 同时定义了正式 Template：它会创建 HTTP 8080 服务，并把 `/app/data` 与 `/app/config` 配置为持久化 Volume，因此 SQLite 数据、管理员密码和 vault 密码不会因重新部署而丢失。Zeabur 的 Template 格式支持 GitHub 服务、域名变量和 Volumes。
 
 ### 发布真正的「一键部署」按钮
 
-Zeabur 的 Deploy Button 需要先把这个 Template 发布到你的 Zeabur 账户；发布后可在 Zeabur Dashboard 的 Template 页面使用 **Share** 生成官方按钮代码，再把按钮代码放进 README。Zeabur 官方说明 Deploy Button 必须由模板作者生成，因此这里不伪造一个固定 URL。citeturn1search0
+Zeabur 的 Deploy Button 需要先把这个 Template 发布到你的 Zeabur 账户；发布后可在 Zeabur Dashboard 的 Template 页面使用 **Share** 生成官方按钮代码，再把按钮代码放进 README。Zeabur 官方说明 Deploy Button 必须由模板作者生成，因此这里不伪造一个固定 URL。
 
 ### Zeabur 上的生产配置
 
 默认 `XGIFT_PAYMENTS_ENABLED=false`，这样刚部署完成不会立即开放真实付款。完成 X Cookie、卡、代理、Stripe 公钥和商品目录配置并确认状态正常后，再在服务环境变量中改为 `true`。
 
-Zeabur 会自动为 HTTP 服务处理公开域名和 HTTPS；应用内部仍保持 `127.0.0.1:8787`，Caddy 只在容器内部监听 `8080`。citeturn1search4
+Zeabur 会自动为 HTTP 服务处理公开域名和 HTTPS；应用内部仍保持 `127.0.0.1:8787`，Caddy 只在容器内部监听 `8080`。
 
 ## 部署教程
 
