@@ -218,6 +218,9 @@ func Run(ctx context.Context) error {
 	mux.HandleFunc("POST /api/admin/payment/cards/remove", s.admin(s.removePaymentCard))
 	mux.HandleFunc("POST /api/admin/payment/cards/billing", s.admin(s.updatePaymentCardBilling))
 	mux.HandleFunc("POST /api/admin/payment/cards/unblock", s.admin(s.unblockPaymentCards))
+	mux.HandleFunc("GET /api/admin/payment/billing-templates", s.admin(s.billingTemplates))
+	mux.HandleFunc("POST /api/admin/payment/billing-templates", s.admin(s.createBillingTemplate))
+	mux.HandleFunc("POST /api/admin/payment/billing-templates/delete", s.admin(s.deleteBillingTemplate))
 	mux.HandleFunc("POST /api/admin/codes", s.admin(s.generate))
 	mux.HandleFunc("POST /api/admin/revoke", s.admin(s.revoke))
 	mux.HandleFunc("POST /api/admin/folders", s.admin(s.createFolder))
@@ -584,6 +587,12 @@ func (s *server) setPaymentNodes(w http.ResponseWriter, r *http.Request) {
 	defer clear(raw)
 	if len(bytes.TrimSpace(raw)) == 0 { message(w, 400, "请输入支付节点 JSON 数组。"); return }
 	nodes, err := proxy.ParseOutboundPool(raw)
+	if err != nil {
+		var wrapped struct { Outbounds json.RawMessage `json:"outbounds"` }
+		if json.Unmarshal(raw, &wrapped) == nil && len(bytes.TrimSpace(wrapped.Outbounds)) > 0 {
+			nodes, err = proxy.ParseOutboundPool(wrapped.Outbounds)
+		}
+	}
 	if err != nil { message(w, 400, "支付节点配置无效："+err.Error()); return }
 	if len(nodes) > 128 { message(w, 400, "支付节点最多 128 个。"); return }
 	if err = s.vault.Put("payment-outbounds", raw); err != nil { message(w, 503, "支付节点保存失败。"); return }
@@ -647,6 +656,79 @@ func (s *server) unblockPaymentCards(w http.ResponseWriter, r *http.Request) {
 	count, err := checkout.UnblockPaymentCards(s.vault)
 	if err != nil { message(w, 503, "解除支付卡阻断失败："+err.Error()); return }
 	reply(w, 200, map[string]any{"ok":true,"unblocked":count})
+}
+
+
+type billingTemplate struct {
+	ID string `json:"id"`
+	Name string `json:"name"`
+	Country string `json:"country"`
+	Postal string `json:"postal"`
+	Line1 string `json:"line1"`
+	Line2 string `json:"line2,omitempty"`
+	City string `json:"city"`
+	State string `json:"state"`
+}
+
+func (s *server) readBillingTemplates() ([]billingTemplate, error) {
+	raw, err := s.vault.Get("payment-billing-templates")
+	if errors.Is(err, sql.ErrNoRows) { return []billingTemplate{}, nil }
+	if err != nil { return nil, err }
+	defer clear(raw)
+	var out []billingTemplate
+	if err := json.Unmarshal(raw, &out); err != nil { return nil, errors.New("账单地址模板数据损坏") }
+	return out, nil
+}
+
+func (s *server) saveBillingTemplates(items []billingTemplate) error {
+	b, err := json.Marshal(items)
+	if err != nil { return err }
+	defer clear(b)
+	return s.vault.Put("payment-billing-templates", b)
+}
+
+func (s *server) billingTemplates(w http.ResponseWriter, r *http.Request) {
+	items, err := s.readBillingTemplates()
+	if err != nil { message(w, 503, "读取地址模板失败："+err.Error()); return }
+	reply(w, 200, map[string]any{"templates": items})
+}
+
+func (s *server) createBillingTemplate(w http.ResponseWriter, r *http.Request) {
+	var item billingTemplate
+	if !decode(w, r, &item) { return }
+	item.Name = strings.TrimSpace(item.Name)
+	item.Country = strings.ToUpper(strings.TrimSpace(item.Country))
+	item.Postal = strings.TrimSpace(item.Postal)
+	item.Line1 = strings.TrimSpace(item.Line1)
+	item.Line2 = strings.TrimSpace(item.Line2)
+	item.City = strings.TrimSpace(item.City)
+	item.State = strings.TrimSpace(item.State)
+	if item.Name == "" || item.Country == "" || item.Postal == "" || item.Line1 == "" || item.City == "" || item.State == "" {
+		message(w, 400, "地址模板请完整填写名称、国家、邮编、地址、城市和州/省。"); return
+	}
+	if len(item.Country) != 2 { message(w, 400, "国家必须是两位 ISO 国家代码，例如 US。"); return }
+	items, err := s.readBillingTemplates()
+	if err != nil { message(w, 503, "读取地址模板失败："+err.Error()); return }
+	item.ID = fmt.Sprintf("bt-%d", time.Now().UnixNano())
+	items = append(items, item)
+	if err = s.saveBillingTemplates(items); err != nil { message(w, 503, "保存地址模板失败："+err.Error()); return }
+	reply(w, 200, item)
+}
+
+func (s *server) deleteBillingTemplate(w http.ResponseWriter, r *http.Request) {
+	var q struct{ ID string `json:"id"` }
+	if !decode(w, r, &q) { return }
+	items, err := s.readBillingTemplates()
+	if err != nil { message(w, 503, "读取地址模板失败："+err.Error()); return }
+	kept := make([]billingTemplate, 0, len(items))
+	found := false
+	for _, item := range items {
+		if item.ID == strings.TrimSpace(q.ID) { found = true; continue }
+		kept = append(kept, item)
+	}
+	if !found { message(w, 404, "地址模板不存在。"); return }
+	if err = s.saveBillingTemplates(kept); err != nil { message(w, 503, "删除地址模板失败："+err.Error()); return }
+	reply(w, 200, map[string]any{"ok":true})
 }
 
 func (s *server) admin(next http.HandlerFunc) http.HandlerFunc {
