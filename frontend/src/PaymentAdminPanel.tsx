@@ -48,7 +48,7 @@ export function PaymentAdminPanel() {
       const value = JSON.parse(nodeJSON);
       const payload = Array.isArray(value) ? value : value?.outbounds;
       if (!Array.isArray(payload)) throw new Error("请输入节点数组，或包含 outbounds 数组的 JSON。");
-      await api("/api/admin/payment/nodes", payload);
+      await api("/api/admin/payment/nodes", payload, "PUT");
       setNodeJSON(""); setMessage("支付节点已保存并加密写入 Vault。"); await load();
     } catch (e) { setMessage((e as Error).message); } finally { setBusy(""); }
   }
@@ -56,7 +56,7 @@ export function PaymentAdminPanel() {
   async function probeNodes() {
     setBusy("probe"); setMessage("");
     try {
-      const data = await api<{results: Probe[]}>("/api/admin/payment/nodes/probe");
+      const data = await api<{results: Probe[]}>("/api/admin/payment/nodes/probe", {}, "POST");
       setProbe(data.results ?? []); setMessage("支付节点探测完成。"); await load();
     } catch (e) { setMessage((e as Error).message); } finally { setBusy(""); }
   }
