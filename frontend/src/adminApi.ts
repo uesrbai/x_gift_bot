@@ -1,6 +1,6 @@
 import { request } from "./shared";
-export async function adminApi<T>(path: string, body?: unknown): Promise<T> {
-  const { ok, data } = await request<T & { message?: string }>(path, body);
+export async function adminApi<T>(path: string, body?: unknown, method?: "GET" | "POST" | "PUT" | "DELETE"): Promise<T> {
+  const { ok, data } = await request<T & { message?: string }>(path, body, undefined, method);
   if (!ok) throw new Error(data.message || "请求失败，请稍后重试。");
   return data;
 }
