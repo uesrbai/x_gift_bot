@@ -117,7 +117,7 @@ export function PaymentAdminPanel() {
     try {
       const value = JSON.parse(nodeJSON);
       if (!Array.isArray(value)) throw new Error("支付节点必须是 JSON 数组。");
-      await api("/api/admin/payment/nodes", { __raw_json__: value });
+      await api("/api/admin/payment/nodes", value);
       setNodeJSON("");
       setMessage("支付节点已保存并加密写入 Vault。");
       await load();
