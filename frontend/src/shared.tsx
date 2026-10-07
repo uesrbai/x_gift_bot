@@ -20,6 +20,7 @@ export async function request<T>(
   path: string,
   body?: unknown,
   signal?: AbortSignal,
+  method?: "GET" | "POST" | "PUT" | "DELETE",
 ): Promise<{ ok: boolean; data: T; status?: number }> {
   const actions: Record<string, string> = { "/api/redeem": "redeem", "/api/check": "check", "/api/manual-link": "manual_link" };
   let token = "";
@@ -32,7 +33,7 @@ export async function request<T>(
     }
   }
   const response = await fetch(path, {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     headers:
       body === undefined ? undefined : { "Content-Type": "application/json", ...(token ? { "X-Turnstile-Token": token } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
