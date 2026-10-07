@@ -82,9 +82,12 @@ func Run(ctx context.Context) error {
 	ctx, cancelService := context.WithCancel(ctx)
 	defer cancelService()
 	origin := os.Getenv("XGIFT_ORIGIN")
+	if origin == "" {
+		origin = os.Getenv("ZEABUR_WEB_URL")
+	}
 	u, err := url.Parse(origin)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
-		return errors.New("XGIFT_ORIGIN must be an HTTPS origin")
+	if origin != "" && (err != nil || u.Scheme != "https" || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil) {
+		return errors.New("XGIFT_ORIGIN/ZEABUR_WEB_URL must be an HTTPS origin")
 	}
 	dir := os.Getenv("XGIFT_DATA_DIR")
 	if dir == "" {
@@ -95,6 +98,18 @@ func Run(ctx context.Context) error {
 	}
 	if err = os.Chmod(dir, 0700); err != nil {
 		return err
+	}
+	passwordFile := os.Getenv("XGIFT_PASSWORD_FILE")
+	adminPasswordFile := os.Getenv("XGIFT_ADMIN_PASSWORD_FILE")
+	if passwordFile == "" {
+		passwordFile = filepath.Join("/app/config", "vault-password")
+	}
+	if adminPasswordFile == "" {
+		adminPasswordFile = filepath.Join("/app/config", "admin-password")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "vault.db")); os.IsNotExist(statErr) {
+		listen := os.Getenv("XGIFT_LISTEN")
+		return runFirstSetup(ctx, dir, passwordFile, adminPasswordFile, origin, listen)
 	}
 	instance, err := os.OpenFile(filepath.Join(dir, "site.lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
