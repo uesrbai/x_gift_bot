@@ -4,7 +4,7 @@ set -euo pipefail
 DATA_DIR="${XGIFT_DATA_DIR:-/app/data}"
 CONFIG_DIR="/app/config"
 
-ORIGIN="${XGIFT_ORIGIN:-}"
+ORIGIN="${XGIFT_ORIGIN:-${ZEABUR_WEB_URL:-}}"
 
 LISTEN_ADDR="${XGIFT_LISTEN:-127.0.0.1:8787}"
 PASSWORD_FILE="${XGIFT_PASSWORD_FILE:-${CONFIG_DIR}/vault-password}"
@@ -12,6 +12,7 @@ ADMIN_PASSWORD_FILE="${XGIFT_ADMIN_PASSWORD_FILE:-${CONFIG_DIR}/admin-password}"
 
 export XGIFT_DATA_DIR="$DATA_DIR"
 export XGIFT_LISTEN="$LISTEN_ADDR"
+export XGIFT_ORIGIN="$ORIGIN"
 export XGIFT_PASSWORD_FILE="$PASSWORD_FILE"
 export XGIFT_ADMIN_PASSWORD_FILE="$ADMIN_PASSWORD_FILE"
 
@@ -65,9 +66,9 @@ if
 fi
 
 if 
-[ ! -s "$ADMIN_PASSWORD_FILE" ]
+[ ! -s "$ADMIN_PASSWORD_FILE" ] && [ -s "$DATA_DIR/vault.db" ]
 ; then
-    echo "Generating admin password..."
+    echo "Generating admin password for an existing vault..."
 
     umask 077
 
@@ -88,7 +89,18 @@ if
     echo
 fi
 
-chmod 600 "$PASSWORD_FILE" "$ADMIN_PASSWORD_FILE"
+if [ -s "$DATA_DIR/payments-enabled" ]; then
+    XGIFT_PAYMENTS_ENABLED="$(tr -d '\r\n' < "$DATA_DIR/payments-enabled")"
+    export XGIFT_PAYMENTS_ENABLED
+elif [ -z "${XGIFT_PAYMENTS_ENABLED+x}" ]; then
+    XGIFT_PAYMENTS_ENABLED="false"
+    export XGIFT_PAYMENTS_ENABLED
+fi
+
+chmod 600 "$PASSWORD_FILE"
+if [ -s "$ADMIN_PASSWORD_FILE" ]; then
+    chmod 600 "$ADMIN_PASSWORD_FILE"
+fi
 
 # ------------------------------------------------------------
 # Caddy configuration

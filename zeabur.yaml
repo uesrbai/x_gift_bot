@@ -56,5 +56,3 @@ spec:
           XGIFT_ADMIN_PASSWORD_FILE:
             default: /app/config/admin-password
             readonly: true
-          XGIFT_PAYMENTS_ENABLED:
-            default: "false"
