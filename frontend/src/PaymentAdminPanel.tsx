@@ -155,7 +155,7 @@ export function PaymentAdminPanel() {
         {templates.length>0 && <FormControl fullWidth><InputLabel>选择已有地址模板</InputLabel><Select label="选择已有地址模板" value={cardForm.templateId} onChange={e=>setCardForm(v=>({...v,templateId:e.target.value}))}>{templates.map(t=><MenuItem key={t.id} value={t.id}>{t.name} · {t.city}, {t.state} · {t.country}</MenuItem>)}</Select></FormControl>}
         <Stack direction={{xs:"column",sm:"row"}} spacing={1}>
           <TextField label="模板名称" value={templateForm.name} onChange={e=>setTemplateForm(v=>({...v,name:e.target.value}))} fullWidth/>
-          <TextField label="国家代码" value={templateForm.country} onChange={e=>setTemplateForm(v=>({...v,country:e.target.value.toUpperCase().slice(0,2)}))} sx={{width:{sm:180}}}/>
+          <TextField label="国家代码" value={templateForm.country} onChange={e=>setTemplateForm(v=>({...v,country:e.target.value.toUpperCase().slice(0,2)}))} sx={{ width: { sm: 180 } }} />
           <TextField label="州/省" value={templateForm.state} onChange={e=>setTemplateForm(v=>({...v,state:e.target.value}))} sx={{width:{sm:180}}/>
         </Stack>
         <Stack direction={{xs:"column",sm:"row"}} spacing={1}>
