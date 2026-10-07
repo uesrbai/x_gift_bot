@@ -4,6 +4,7 @@ FROM node:22-bookworm AS frontend
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci
+COPY tsconfig.json ./
 COPY frontend ./frontend
 RUN mkdir -p internal/site/assets && npm run build
 
