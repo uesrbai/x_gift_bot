@@ -80,24 +80,6 @@ if [ -s "$ADMIN_PASSWORD_FILE" ]; then
     chmod 600 "$ADMIN_PASSWORD_FILE"
 fi
 
-# ------------------------------------------------------------
-# Caddy configuration
-# ------------------------------------------------------------
-
-cat > /etc/caddy/Caddyfile <<EOF
-:8080 {
-    reverse_proxy 127.0.0.1:8787
-
-    header {
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
-        Referrer-Policy "same-origin"
-    }
-
-    encode gzip
-}
-EOF
-
 echo "Starting xgift-web..."
 /app/bin/xgift-web &
 XGIFT_PID=$!
@@ -122,6 +104,29 @@ if ! curl -fsS http://127.0.0.1:8787/healthz >/dev/null 2>&1; then
     echo "ERROR: xgift-web did not become ready."
     exit 1
 fi
+
+# During first-run setup, inject the server-generated one-time token into
+# the private loopback request. The browser never needs to see or copy it.
+SETUP_TOKEN=""
+if [ -s "$DATA_DIR/setup-token" ]; then
+    SETUP_TOKEN="$(tr -d '\r\n' < "$DATA_DIR/setup-token")"
+fi
+
+cat > /etc/caddy/Caddyfile <<EOF
+:8080 {
+    reverse_proxy 127.0.0.1:8787 {
+        header_up X-XGift-Setup-Token "$SETUP_TOKEN"
+    }
+
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "same-origin"
+    }
+
+    encode gzip
+}
+EOF
 
 echo "Starting Caddy on :8080..."
 caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
