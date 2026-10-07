@@ -39,9 +39,9 @@ func (s *server) setPayments(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	path := filepath.Join(os.Getenv("XGIFT_DATA_DIR"), "payments-enabled")
-	value := "false\\n"
+	value := "false\n"
 	if q.Enabled {
-		value = "true\\n"
+		value = "true\n"
 	}
 	if err := os.WriteFile(path, []byte(value), 0600); err != nil {
 		message(w, 500, "付款开关保存失败，请稍后重试。")
