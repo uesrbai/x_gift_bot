@@ -55,6 +55,7 @@ type server struct {
 	jobs             sync.WaitGroup
 	ctx              context.Context
 	recoveryMu       sync.Mutex
+	paymentsMu       sync.RWMutex
 	limitsMu         sync.Mutex
 	limits           map[string]limit
 }
@@ -127,8 +128,9 @@ func Run(ctx context.Context) error {
 	if len(admin) < 32 {
 		return errors.New("admin password must contain at least 32 characters")
 	}
-	s := &server{origin: origin, adminHash: sha256.Sum256(admin), payments: os.Getenv("XGIFT_PAYMENTS_ENABLED") == "true", lockPath: filepath.Join(dir, "checkout.lock"), work: make(chan struct{}, 1), checks: make(chan struct{}, 4), ctx: ctx, limits: map[string]limit{}}
+	s := &server{origin: origin, adminHash: sha256.Sum256(admin), lockPath: filepath.Join(dir, "checkout.lock"), work: make(chan struct{}, 1), checks: make(chan struct{}, 4), ctx: ctx, limits: map[string]limit{}}
 	clear(admin)
+	s.payments = loadPaymentsEnabled(dir)
 	if err = s.configureTurnstile(); err != nil {
 		return err
 	}
@@ -211,6 +213,7 @@ func Run(ctx context.Context) error {
 	mux.HandleFunc("GET /api/admin/manual-link/plans", s.admin(s.manualLinkPlans))
 	mux.HandleFunc("POST /api/admin/manual-link", s.admin(s.manualLink))
 	mux.HandleFunc("GET /api/admin/recovery", s.admin(s.recoveryStatus))
+	mux.HandleFunc("POST /api/admin/payments", s.admin(s.setPayments))
 	mux.HandleFunc("POST /api/admin/recovery/preview", s.admin(s.recoveryPreview))
 	mux.HandleFunc("POST /api/admin/recovery/start", s.admin(s.recoveryStart))
 	mux.HandleFunc("POST /api/admin/recovery/stop", s.admin(s.recoveryStop))
