@@ -56,6 +56,11 @@ func PaymentNetworkStatus(v *vault.Vault) (PaymentNetwork, error) {
 	return PaymentNetwork{Mode: mode, Nodes: len(nodes), Available: len(available), Cooling: len(nodes) - len(available)}, nil
 }
 
+// PaymentNodeID returns the stable non-secret identifier used by admin APIs.
+func PaymentNodeID(raw json.RawMessage) string {
+	return outboundID(raw)
+}
+
 func outboundID(raw json.RawMessage) string {
 	// Decode/re-encode to ignore whitespace and object key ordering.
 	var node map[string]any
