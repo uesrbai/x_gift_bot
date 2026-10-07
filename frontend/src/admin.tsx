@@ -54,6 +54,7 @@ import { LookupPanel } from "./LookupPanel";
 import { RecoveryPanel } from "./RecoveryPanel";
 import { StatsPanel } from "./StatsPanel";
 import { ManualPaymentPanel } from "./ManualPaymentPanel";
+import { PaymentAdminPanel } from "./PaymentAdminPanel";
 
 type Code = AdminCode;
 type Listing = {
@@ -435,6 +436,7 @@ function Admin() {
         />
       </Box>
       <ManualPaymentPanel />
+      <PaymentAdminPanel />
       <RecoveryPanel selection={recoverySelection} />
       <StatsPanel refreshSignal={statsSignal} />
       <FolderPanel
