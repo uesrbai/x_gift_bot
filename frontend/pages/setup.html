@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XGift 首次初始化</title>
+<style>
+:root{color-scheme:light dark}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:900px;margin:0 auto;padding:28px 18px;line-height:1.55;background:#f7f7f8;color:#171717}main{background:#fff;border:1px solid #ddd;border-radius:18px;padding:28px;box-shadow:0 8px 30px #00000012}h1{margin-top:0}section{border-top:1px solid #ddd;padding-top:22px;margin-top:22px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-weight:600}input,textarea{box-sizing:border-box;width:100%;margin-top:6px;padding:11px;border:1px solid #bbb;border-radius:10px;background:inherit;color:inherit;font:inherit}textarea{min-height:120px;font-family:ui-monospace,monospace;font-size:13px}.full{grid-column:1/-1}.hint{font-size:13px;color:#666}.danger{padding:12px;border-radius:10px;background:#fff3cd}.actions{display:flex;gap:12px;align-items:center;margin-top:24px}button{border:0;border-radius:10px;padding:12px 20px;background:#111;color:#fff;font-weight:700;cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}#status{white-space:pre-wrap}.ok{color:#087f23}.err{color:#b00020}@media(max-width:700px){.grid{grid-template-columns:1fr}.full{grid-column:auto}}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}main{background:#181818;border-color:#333}.hint{color:#aaa}.danger{background:#4a3b12}input,textarea{border-color:#555}}
+</style>
+</head>
+<body>
+<main>
+<h1>XGift 首次生产初始化</h1>
+<p>这是 Zeabur 首次启动向导。提交后，X Cookie、支付卡、代理和 Stripe 配置会写入 <b>AES-256-GCM 加密 Vault</b>，不会写入 GitHub。</p>
+<div class="danger">只在你自己的 HTTPS 域名上操作。不要把初始化令牌、X Cookie、卡号或 CVC 发给任何人。</div>
+<form id="f">
+<section><h2>1. 初始化令牌与管理员</h2><div class="grid">
+<label>一次性初始化令牌<div><input id="token" required autocomplete="off"></div></label>
+<label>后台管理员密码（至少 32 字符）<div><input id="admin_password" type="password" minlength="32" required autocomplete="new-password"></div></label>
+</div></section>
+<section><h2>2. X 账号</h2><p class="hint">填写你自己已登录 X 账号的 auth_token 与 ct0。只保存在加密 Vault。</p><div class="grid">
+<label>auth_token<div><input id="auth_token" type="password" required autocomplete="off"></div></label>
+<label>ct0<div><input id="ct0" type="password" required autocomplete="off"></div></label>
+<label>Authorization（可选）<div><input id="authorization" placeholder="留空使用默认网页版 Bearer"></div></label>
+<label>User-Agent（可选）<div><input id="user_agent" placeholder="留空使用默认 Chrome UA"></div></label>
+</div></section>
+<section><h2>3. 支付卡</h2><p class="hint">使用你有权使用的真实支付卡。卡号和 CVC 只通过 HTTPS 提交后立即写入加密 Vault。</p><div class="grid">
+<label>卡号<div><input id="card_number" inputmode="numeric" autocomplete="cc-number" required></div></label>
+<label>CVC<div><input id="card_cvc" inputmode="numeric" autocomplete="cc-csc" required></div></label>
+<label>有效期月份<div><input id="card_month" placeholder="01" maxlength="2" required></div></label>
+<label>有效期年份<div><input id="card_year" placeholder="2031" maxlength="4" required></div></label>
+<label>持卡人姓名<div><input id="billing_name" autocomplete="cc-name" required></div></label>
+<label>账单邮箱<div><input id="billing_email" type="email" autocomplete="email" required></div></label>
+<label>账单国家<div><input id="billing_country" placeholder="US" maxlength="2" required></div></label>
+<label>账单邮编<div><input id="billing_postal" autocomplete="postal-code"></div></label>
+<label class="full">账单地址<div><input id="billing_line1" autocomplete="address-line1"></div></label>
+<label>地址行 2<div><input id="billing_line2" autocomplete="address-line2"></div></label>
+<label>城市<div><input id="billing_city" autocomplete="address-level2"></div></label>
+<label>州/省<div><input id="billing_state" autocomplete="address-level1"></div></label>
+</div></section>
+<section><h2>4. 网络与 Stripe</h2><div class="grid">
+<label class="full">代理配置 JSON<div><textarea id="proxy_json">{"outbounds":[{"type":"direct","tag":"direct"}]}</textarea></label>
+<label class="full">Stripe publishable key<div><input id="stripe_key" type="password" placeholder="pk_live_..." required autocomplete="off"></div></label>
+</div><p class="hint">如果服务器能直接访问 X 和 Stripe，保持 direct 即可；否则粘贴项目支持的 sing-box outbounds 配置。</p></section>
+<section><h2>5. 开启真实付款</h2><label><input id="enable_payments" type="checkbox"> 初始化完成后立即开启真实付款</label><p class="hint">建议第一次部署先不勾选，确认状态和商品目录无误后再开启。</p></section>
+<div class="actions"><button id="submit" type="submit">保存并完成初始化</button><span id="status"></span></div>
+</form>
+</main>
+<script nonce="__XGIFT_NONCE__">
+const ids=["token","admin_password","auth_token","ct0","authorization","user_agent","stripe_key","card_number","card_month","card_year","card_cvc","billing_name","billing_email","billing_country","billing_postal","billing_line1","billing_line2","billing_city","billing_state","proxy_json","enable_payments"];
+const $=id=>document.getElementById(id), status=$("status"), button=$("submit");
+$("f").addEventListener("submit",async e=>{
+ e.preventDefault();button.disabled=true;status.className="";status.textContent="正在验证并加密保存，请不要关闭页面…";
+ const body={};for(const id of ids){const el=$(id);body[id]=el.type==="checkbox"?el.checked:el.value}
+ try{
+  const r=await fetch("/api/setup",{method:"POST",headers:{"Content-Type":"application/json","X-XGift-Setup-Token":body.token},body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({message:"服务器返回无效数据"}));
+  if(!r.ok)throw new Error(d.message||"初始化失败");
+  status.className="ok";status.textContent=d.message||"初始化完成。";
+  setTimeout(()=>location.reload(),5000);
+ }catch(err){status.className="err";status.textContent=err.message;button.disabled=false}
+});
+</script>
+</body></html>
