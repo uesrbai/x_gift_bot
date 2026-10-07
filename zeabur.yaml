@@ -1,0 +1,25 @@
+name: xgift
+
+build:
+  type: dockerfile
+  dockerfile: Dockerfile
+
+ports:
+  - port: 8080
+    type: HTTP
+
+environment:
+  XGIFT_LISTEN:
+    value: "127.0.0.1:8787"
+
+  XGIFT_DATA_DIR:
+    value: "/app/data"
+
+  XGIFT_PASSWORD_FILE:
+    value: "/app/config/vault-password"
+
+  XGIFT_ADMIN_PASSWORD_FILE:
+    value: "/app/config/admin-password"
+
+  XGIFT_PAYMENTS_ENABLED:
+    value: "false"
