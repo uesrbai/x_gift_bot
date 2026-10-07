@@ -4,7 +4,16 @@ set -euo pipefail
 DATA_DIR="${XGIFT_DATA_DIR:-/app/data}"
 CONFIG_DIR="/app/config"
 
-ORIGIN="${XGIFT_ORIGIN:-${ZEABUR_WEB_URL:-}}"
+# Prefer an explicitly configured HTTPS origin. If the template contains a
+# bare DOMAIN value (for example "gift.zeabur.app"), fall back to Zeabur's
+# canonical URL. During first deployment there may be no domain yet, so an
+# empty origin is allowed; the app will then skip origin matching.
+ORIGIN="${XGIFT_ORIGIN:-}"
+case "$ORIGIN" in
+    https://*) ;;
+    "") ORIGIN="${ZEABUR_WEB_URL:-}" ;;
+    *) ORIGIN="${ZEABUR_WEB_URL:-}" ;;
+esac
 
 LISTEN_ADDR="${XGIFT_LISTEN:-127.0.0.1:8787}"
 PASSWORD_FILE="${XGIFT_PASSWORD_FILE:-${CONFIG_DIR}/vault-password}"
@@ -17,67 +26,36 @@ export XGIFT_PASSWORD_FILE="$PASSWORD_FILE"
 export XGIFT_ADMIN_PASSWORD_FILE="$ADMIN_PASSWORD_FILE"
 
 mkdir -p "$DATA_DIR" "$CONFIG_DIR"
-
 chmod 700 "$DATA_DIR" "$CONFIG_DIR"
 
-# ------------------------------------------------------------
-# Basic configuration validation
-# ------------------------------------------------------------
-
-if 
-[ -z "$ORIGIN" ]
-; then
-    echo "ERROR: XGIFT_ORIGIN is required."
-    echo "Example: https://gift.example.com"
-    exit 1
+# If an origin is configured, it must be HTTPS. An origin is optional before
+# a Zeabur domain has been generated.
+if [ -n "$ORIGIN" ]; then
+    case "$ORIGIN" in
+        https://*) ;;
+        *)
+            echo "ERROR: XGIFT_ORIGIN/ZEABUR_WEB_URL must start with https://"
+            exit 1
+            ;;
+    esac
 fi
-
-case "$ORIGIN" in
-    https://*)
-        ;;
-    *)
-        echo "ERROR: XGIFT_ORIGIN must start with https://"
-        exit 1
-        ;;
-esac
 
 # ------------------------------------------------------------
 # Password files
-#
-# The application requires:
-#   - admin password >= 32 characters
-#   - vault password file
-#
-# These are generated once and then kept on the persistent volume.
 # ------------------------------------------------------------
 
-if 
-[ ! -s "$PASSWORD_FILE" ]
-; then
+if [ ! -s "$PASSWORD_FILE" ]; then
     echo "Generating vault password..."
-
     umask 077
-
-    openssl rand -base64 48 \
-        | tr -d '\n' \
-        > "$PASSWORD_FILE"
-
+    openssl rand -base64 48 | tr -d '\n' > "$PASSWORD_FILE"
     chmod 600 "$PASSWORD_FILE"
 fi
 
-if 
-[ ! -s "$ADMIN_PASSWORD_FILE" ] && [ -s "$DATA_DIR/vault.db" ]
-; then
+if [ ! -s "$ADMIN_PASSWORD_FILE" ] && [ -s "$DATA_DIR/vault.db" ]; then
     echo "Generating admin password for an existing vault..."
-
     umask 077
-
-    openssl rand -base64 48 \
-        | tr -d '\n' \
-        > "$ADMIN_PASSWORD_FILE"
-
+    openssl rand -base64 48 | tr -d '\n' > "$ADMIN_PASSWORD_FILE"
     chmod 600 "$ADMIN_PASSWORD_FILE"
-
     echo
     echo "============================================================"
     echo "XGift admin password generated:"
@@ -104,12 +82,6 @@ fi
 
 # ------------------------------------------------------------
 # Caddy configuration
-#
-# Zeabur exposes port 8080.
-# Caddy proxies internally to xgift-web on 127.0.0.1:8787.
-#
-# TLS is handled by Zeabur's public proxy, so Caddy runs HTTP
-# internally.
 # ------------------------------------------------------------
 
 cat > /etc/caddy/Caddyfile <<EOF
@@ -126,21 +98,11 @@ cat > /etc/caddy/Caddyfile <<EOF
 }
 EOF
 
-# ------------------------------------------------------------
-# Start xgift-web
-# ------------------------------------------------------------
-
 echo "Starting xgift-web..."
-
 /app/bin/xgift-web &
 XGIFT_PID=$!
 
-# ------------------------------------------------------------
-# Wait until backend is alive
-# ------------------------------------------------------------
-
 echo "Waiting for xgift-web..."
-
 for i in $(seq 1 60); do
     if curl -fsS http://127.0.0.1:8787/healthz >/dev/null 2>&1; then
         echo "xgift-web is ready."
@@ -161,34 +123,19 @@ if ! curl -fsS http://127.0.0.1:8787/healthz >/dev/null 2>&1; then
     exit 1
 fi
 
-# ------------------------------------------------------------
-# Start Caddy
-# ------------------------------------------------------------
-
 echo "Starting Caddy on :8080..."
-
 caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
 CADDY_PID=$!
 
-# ------------------------------------------------------------
-# Graceful shutdown
-# ------------------------------------------------------------
-
 shutdown() {
     echo "Stopping services..."
-
     kill -TERM "$CADDY_PID" 2>/dev/null || true
     kill -TERM "$XGIFT_PID" 2>/dev/null || true
-
     wait "$CADDY_PID" 2>/dev/null || true
     wait "$XGIFT_PID" 2>/dev/null || true
 }
 
 trap shutdown SIGTERM SIGINT
-
-# ------------------------------------------------------------
-# Keep container alive while either service is running
-# ------------------------------------------------------------
 
 while true; do
     if ! kill -0 "$XGIFT_PID" 2>/dev/null; then
