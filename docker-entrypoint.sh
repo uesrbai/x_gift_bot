@@ -89,8 +89,11 @@ if
     echo
 fi
 
-if [ -z "${XGIFT_PAYMENTS_ENABLED+x}" ] && [ -s "$DATA_DIR/payments-enabled" ]; then
+if [ -s "$DATA_DIR/payments-enabled" ]; then
     XGIFT_PAYMENTS_ENABLED="$(tr -d '\r\n' < "$DATA_DIR/payments-enabled")"
+    export XGIFT_PAYMENTS_ENABLED
+elif [ -z "${XGIFT_PAYMENTS_ENABLED+x}" ]; then
+    XGIFT_PAYMENTS_ENABLED="false"
     export XGIFT_PAYMENTS_ENABLED
 fi
 
