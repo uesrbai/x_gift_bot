@@ -170,21 +170,25 @@ export function Shell({
         >
           MIT License
         </Link>
-        <Typography variant="body2" component="span" aria-hidden="true">
-          ·
-        </Typography>
-        <Link
-          variant="body2"
-          color="inherit"
-          underline="hover"
-          href="https://github.com/mizorewww/x_gift_bot"
-          target="_blank"
-          rel="noopener noreferrer"
-          sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
-        >
-          <GitHubIcon sx={{ fontSize: 16 }} aria-hidden="true" />
-          GitHub
-        </Link>
+        {admin && (
+          <>
+            <Typography variant="body2" component="span" aria-hidden="true">
+              ·
+            </Typography>
+            <Link
+              variant="body2"
+              color="inherit"
+              underline="hover"
+              href="https://github.com/mizorewww/x_gift_bot"
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+            >
+              <GitHubIcon sx={{ fontSize: 16 }} aria-hidden="true" />
+              GitHub
+            </Link>
+          </>
+        )}
       </Box>
       </Container>
     </>
