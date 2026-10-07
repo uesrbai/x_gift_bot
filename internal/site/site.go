@@ -209,6 +209,15 @@ func Run(ctx context.Context) error {
 	mux.HandleFunc("POST /api/admin/recovery/preview", s.admin(s.recoveryPreview))
 	mux.HandleFunc("POST /api/admin/recovery/start", s.admin(s.recoveryStart))
 	mux.HandleFunc("POST /api/admin/recovery/stop", s.admin(s.recoveryStop))
+	mux.HandleFunc("GET /api/admin/payment/nodes", s.admin(s.paymentNodes))
+	mux.HandleFunc("PUT /api/admin/payment/nodes", s.admin(s.setPaymentNodes))
+	mux.HandleFunc("POST /api/admin/payment/nodes/probe", s.admin(s.probePaymentNodes))
+	mux.HandleFunc("GET /api/admin/payment/cards", s.admin(s.paymentCards))
+	mux.HandleFunc("POST /api/admin/payment/cards", s.admin(s.addPaymentCards))
+	mux.HandleFunc("PUT /api/admin/payment/cards", s.admin(s.setPaymentCards))
+	mux.HandleFunc("POST /api/admin/payment/cards/remove", s.admin(s.removePaymentCard))
+	mux.HandleFunc("POST /api/admin/payment/cards/billing", s.admin(s.updatePaymentCardBilling))
+	mux.HandleFunc("POST /api/admin/payment/cards/unblock", s.admin(s.unblockPaymentCards))
 	mux.HandleFunc("POST /api/admin/codes", s.admin(s.generate))
 	mux.HandleFunc("POST /api/admin/revoke", s.admin(s.revoke))
 	mux.HandleFunc("POST /api/admin/folders", s.admin(s.createFolder))
@@ -544,6 +553,102 @@ func (s *server) middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+func (s *server) paymentNodes(w http.ResponseWriter, r *http.Request) {
+	raw, err := s.vault.Get("payment-outbounds")
+	if errors.Is(err, sql.ErrNoRows) { reply(w, 200, map[string]any{"mode":"direct","nodes":[],"count":0,"available":0,"cooling":0}); return }
+	if err != nil { message(w, 503, "读取支付节点失败。"); return }
+	defer clear(raw)
+	nodes, err := proxy.ParseOutboundPool(raw)
+	if err != nil { message(w, 503, "支付节点配置无效："+err.Error()); return }
+	items := make([]map[string]any, 0, len(nodes))
+	for _, node := range nodes {
+		id := outboundID(node)
+		var meta map[string]any
+		if json.Unmarshal(node, &meta) != nil { continue }
+		typ, _ := meta["type"].(string)
+		item := map[string]any{"id":"node-"+id[:12],"type":typ}
+		if egress, e := s.vault.Get("payment-egress:"+id); e == nil {
+			item["egress_ip"] = strings.TrimSpace(string(egress)); clear(egress)
+		}
+		items = append(items, item)
+	}
+	network, err := checkout.PaymentNetworkStatus(s.vault)
+	if err != nil { message(w, 503, "读取支付节点状态失败。"); return }
+	reply(w, 200, map[string]any{"mode":network.Mode,"nodes":items,"count":network.Nodes,"available":network.Available,"cooling":network.Cooling})
+}
+
+func (s *server) setPaymentNodes(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil { message(w, 400, "支付节点 JSON 读取失败。"); return }
+	defer clear(raw)
+	if len(bytes.TrimSpace(raw)) == 0 { message(w, 400, "请输入支付节点 JSON 数组。"); return }
+	nodes, err := proxy.ParseOutboundPool(raw)
+	if err != nil { message(w, 400, "支付节点配置无效："+err.Error()); return }
+	if len(nodes) > 128 { message(w, 400, "支付节点最多 128 个。"); return }
+	if err = s.vault.Put("payment-outbounds", raw); err != nil { message(w, 503, "支付节点保存失败。"); return }
+	network, err := checkout.PaymentNetworkStatus(s.vault)
+	if err != nil { message(w, 503, "支付节点已保存，但状态读取失败。"); return }
+	reply(w, 200, map[string]any{"ok":true,"mode":network.Mode,"count":network.Nodes,"available":network.Available,"cooling":network.Cooling})
+}
+
+func (s *server) probePaymentNodes(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 110*time.Second)
+	defer cancel()
+	results := make([]checkout.PaymentNodeProbe, 0)
+	err := checkout.ProbePaymentOutbounds(ctx, s.vault, func(item checkout.PaymentNodeProbe) { results = append(results, item) })
+	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) { message(w, 503, "支付节点探测失败："+err.Error()); return }
+	reply(w, 200, map[string]any{"ok":err==nil,"results":results})
+}
+
+func (s *server) paymentCards(w http.ResponseWriter, r *http.Request) {
+	cards, err := checkout.CardsStatus(s.vault)
+	if err != nil { message(w, 503, "读取支付卡失败。"); return }
+	rotation, err := checkout.PaymentRotationStatus(s.vault)
+	if err != nil { message(w, 503, "读取支付卡轮换状态失败。"); return }
+	reply(w, 200, map[string]any{"cards":cards,"rotation":rotation})
+}
+
+func (s *server) addPaymentCards(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 32<<10))
+	if err != nil { message(w, 400, "支付卡 JSON 读取失败。"); return }
+	defer clear(raw)
+	count, err := checkout.AddCardRecords(s.vault, raw)
+	if err != nil { message(w, 400, "支付卡保存失败："+err.Error()); return }
+	reply(w, 200, map[string]any{"ok":true,"cards":count})
+}
+
+func (s *server) setPaymentCards(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 32<<10))
+	if err != nil { message(w, 400, "支付卡 JSON 读取失败。"); return }
+	defer clear(raw)
+	count, err := checkout.SetCardRecords(s.vault, raw)
+	if err != nil { message(w, 400, "支付卡保存失败："+err.Error()); return }
+	reply(w, 200, map[string]any{"ok":true,"cards":count})
+}
+
+func (s *server) removePaymentCard(w http.ResponseWriter, r *http.Request) {
+	var q struct{ Last4 string }
+	if !decode(w, r, &q) { return }
+	count, err := checkout.RemoveCardRecord(s.vault, strings.TrimSpace(q.Last4))
+	if err != nil { message(w, 400, "删除支付卡失败："+err.Error()); return }
+	reply(w, 200, map[string]any{"ok":true,"cards":count})
+}
+
+func (s *server) updatePaymentCardBilling(w http.ResponseWriter, r *http.Request) {
+	var fields map[string]string
+	if !decode(w, r, &fields) { return }
+	count, err := checkout.UpdateCardBilling(s.vault, fields)
+	if err != nil { message(w, 400, "更新账单信息失败："+err.Error()); return }
+	reply(w, 200, map[string]any{"ok":true,"cards":count})
+}
+
+func (s *server) unblockPaymentCards(w http.ResponseWriter, r *http.Request) {
+	count, err := checkout.UnblockPaymentCards(s.vault)
+	if err != nil { message(w, 503, "解除支付卡阻断失败："+err.Error()); return }
+	reply(w, 200, map[string]any{"ok":true,"unblocked":count})
+}
+
 func (s *server) admin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user, password, ok := r.BasicAuth()

@@ -339,3 +339,117 @@ curl -u "$AUTH" \
 - `POST /api/status`
 
 自动化系统建议使用 `/api/v1/*`，因为这些接口明确要求管理员认证。
+
+## 12. 支付节点与支付卡管理
+
+下面这些接口是管理员接口，使用与 `/api/v1/*` 相同的 HTTP Basic Auth（用户名固定为 `admin`）。
+
+### 12.1 查询支付节点
+
+`GET /api/admin/payment/nodes`
+
+返回节点数量、可用数量、冷却数量，以及每个节点的节点 ID（脱敏）、协议类型和最近探测到的出口 IP。
+
+**不会返回节点密码、UUID、密钥或完整 outbound JSON。**
+
+### 12.2 设置支付节点池
+
+`PUT /api/admin/payment/nodes`
+
+请求体直接使用支付节点 JSON 数组：
+
+```json
+[
+  {
+    "type": "anytls",
+    "server": "example.com",
+    "server_port": 443,
+    "password": "..."
+  }
+]
+```
+
+项目会先通过 `proxy.ParseOutboundPool` 校验，再加密写入 Vault 的 `payment-outbounds`。
+
+传入空数组可以恢复 **direct** 模式。最多 128 个节点，单次请求最大 1 MiB。
+
+### 12.3 探测支付节点
+
+`POST /api/admin/payment/nodes/probe`
+
+系统会通过每个节点访问 Stripe 公网入口和 IP 查询服务，返回节点 ID、协议类型、Stripe HTTP 状态、出口 IP、健康状态和非敏感错误原因。
+
+探测结果中的出口 IP 会加密保存，供后台后续查看。
+
+### 12.4 查询支付卡状态
+
+`GET /api/admin/payment/cards`
+
+只返回脱敏信息，例如卡号后四位、是否可用、是否冷却/阻断、阻断原因、卡+节点组合冷却数量和当前轮换使用情况。
+
+**不会返回完整卡号或 CVC。**
+
+### 12.5 新增支付卡
+
+`POST /api/admin/payment/cards`
+
+请求体可以是单张卡对象，也可以是卡数组：
+
+```json
+{
+  "number": "...",
+  "month": "10",
+  "year": "2028",
+  "cvc": "...",
+  "name": "Card Holder",
+  "email": "billing@example.com",
+  "country": "US",
+  "postal": "90000",
+  "line1": "Example Street 1",
+  "line2": "",
+  "city": "Los Angeles",
+  "state": "CA"
+}
+```
+
+新增/更新前会执行卡号 Luhn、有效期、CVC、账单国家等校验。
+
+### 12.6 替换整个支付卡集合
+
+`PUT /api/admin/payment/cards`
+
+请求体必须是完整 JSON 数组，适合批量维护卡池；生产环境不要把请求体写入日志。
+
+### 12.7 删除一张支付卡
+
+`POST /api/admin/payment/cards/remove`
+
+```json
+{
+  "last4": "1234"
+}
+```
+
+只允许通过后四位删除，并且不会允许删除最后一张支付卡。
+
+### 12.8 更新统一账单信息
+
+`POST /api/admin/payment/cards/billing`
+
+可更新 `billing_name`、`email`、`billing_country`、`billing_postal_code`、`billing_address_line1`、`billing_address_line2`、`billing_city`、`billing_state`。
+
+更新后会重新验证所有已配置支付卡。
+
+### 12.9 清除支付卡阻断/冷却
+
+`POST /api/admin/payment/cards/unblock`
+
+这是明确的管理员操作，用于清除持久化的卡片阻断状态。
+
+**注意：** 付款被 Stripe 拒绝后，不建议无条件立即解锁并重复付款。先确认拒绝原因，再决定是否恢复卡片。
+
+### 12.10 安全说明
+
+支付节点和支付卡都存储在加密 Vault 中。管理接口本身只应该通过 HTTPS 和管理员认证访问。
+
+不要把真实卡号、CVC、节点密码、UUID 或完整 outbound JSON 放进 Git、README、Issue、日志或聊天记录。
