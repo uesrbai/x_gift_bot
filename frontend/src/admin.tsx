@@ -17,6 +17,7 @@ import {
   MenuItem,
   Paper,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -113,6 +114,7 @@ function Admin() {
   const [countError, setCountError] = useState(false);
   const [focusTarget, setFocusTarget] = useState<"list" | null>(null);
   const [statsSignal, setStatsSignal] = useState(0);
+  const [paymentBusy, setPaymentBusy] = useState(false);
   const listSequence = useRef(0);
   const mutation = useRef(false);
   const form = useRef<HTMLFormElement>(null);
@@ -250,6 +252,21 @@ function Admin() {
       copying.current = false;
     }
   }
+  async function togglePayments(enabled: boolean) {
+    if (paymentBusy) return;
+    setPaymentBusy(true);
+    setNotice(null);
+    try {
+      const data = await api<{ payments_enabled: boolean }>("/api/admin/payments", { enabled });
+      setListing((current) => current ? { ...current, payments_enabled: data.payments_enabled } : current);
+      setNotice({ text: data.payments_enabled ? "真实付款已开启。" : "真实付款已暂停。", error: false });
+    } catch (error) {
+      setNotice({ text: (error as Error).message, error: true });
+    } finally {
+      setPaymentBusy(false);
+    }
+  }
+
   async function generate() {
     if (mutation.current) return;
     mutation.current = true;
@@ -376,16 +393,16 @@ function Admin() {
           </Typography>
         </Box>
         <Stack direction="row" alignItems="center" spacing={1}>
-          <Chip
-            variant="outlined"
-            color={listing?.payments_enabled ? "success" : "default"}
-            label={
-              listing
-                ? listing.payments_enabled
-                  ? "充值已开放"
-                  : "用户充值入口已暂停"
-                : "正在获取服务状态"
+          <FormControlLabel
+            control={
+              <Switch
+                checked={Boolean(listing?.payments_enabled)}
+                disabled={!listing || paymentBusy}
+                onChange={(event) => void togglePayments(event.target.checked)}
+                color="success"
+              />
             }
+            label={listing?.payments_enabled ? "真实付款已开启" : "真实付款已关闭"}
           />
           <AppearanceMenu />
         </Stack>
