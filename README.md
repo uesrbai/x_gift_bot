@@ -37,13 +37,25 @@ npm run preview
 ### 最简单的方式
 
 1. 在 Zeabur 新建 Project。
-2. 选择 **Deploy New Service → GitHub**，选择本仓库。
-3. Zeabur 会自动检测根目录的 `Dockerfile` 并使用 Docker 构建。Zeabur 官方 Dockerfile 部署文档
-4. 绑定一个 Zeabur 域名或自己的域名。
-5. 确认服务环境变量中的 `XGIFT_ORIGIN` 与实际 HTTPS 域名完全一致。
-6. 首次启动后，从服务日志保存自动生成的管理员密码。
+2. 选择 **Deploy New Service → GitHub**，选择本仓库。Zeabur 会自动检测根目录 `Dockerfile` 并使用 Docker 构建。Zeabur 的 Dockerfile 部署会自动检测根目录 Dockerfile。
+3. 给服务生成一个 `zeabur.app` 域名或绑定自己的域名。
+4. 如果直接从 GitHub 部署，建议把 `XGIFT_ORIGIN` 设置为 `${ZEABUR_WEB_URL}`；程序在未设置时也会自动读取该 Zeabur 特殊变量。
+5. 首次启动时，服务日志会打印一次性「初始化令牌」。打开站点首页进入首次生产初始化页面，填完配置后服务会自动重启。
+6. 初始化完成后访问 `/admin`，使用你在向导中设置的管理员密码。
 
 仓库根目录的 `zeabur.yaml` 同时定义了正式 Template：它会创建 HTTP 8080 服务，并把 `/app/data` 与 `/app/config` 配置为持久化 Volume，因此 SQLite 数据、管理员密码和 vault 密码不会因重新部署而丢失。Zeabur 的 Template 格式支持 GitHub 服务、域名变量和 Volumes。
+
+### 首次网页初始化（Zeabur 推荐）
+
+Zeabur 环境没有 SSH 交互终端，因此生产初始化不再要求执行 `./bin/xgift setup`。当 `/app/data/vault.db` 不存在时，`xgift-web` 自动进入一次性初始化模式：
+
+1. 查看 Zeabur 服务日志，复制一次性初始化令牌。
+2. 打开服务域名首页。
+3. 填写 X Cookie、管理员密码、支付卡、代理和 Stripe publishable key。
+4. 默认商品目录会写入加密 Vault；支付开关默认关闭。
+5. 点击保存后服务自动退出并由 Zeabur 重新启动，随后首页恢复为正常兑换页。
+
+支付卡、Cookie、代理和 Stripe key 都不会写入 GitHub；敏感记录进入 XGift 的 AES-256-GCM Vault。初始化令牌在完成后立即删除。
 
 ### 发布真正的「一键部署」按钮
 
@@ -51,7 +63,7 @@ Zeabur 的 Deploy Button 需要先把这个 Template 发布到你的 Zeabur 账�
 
 ### Zeabur 上的生产配置
 
-默认 `XGIFT_PAYMENTS_ENABLED=false`，这样刚部署完成不会立即开放真实付款。完成 X Cookie、卡、代理、Stripe 公钥和商品目录配置并确认状态正常后，再在服务环境变量中改为 `true`。
+首次网页初始化默认不开放真实付款；向导最后可以选择是否立即开启。初始化结果会保存在持久化 `/app/data` Volume，重启不会丢失。真实付款建议先关闭，确认状态正常后再开启。
 
 Zeabur 会自动为 HTTP 服务处理公开域名和 HTTPS；应用内部仍保持 `127.0.0.1:8787`，Caddy 只在容器内部监听 `8080`。
 
