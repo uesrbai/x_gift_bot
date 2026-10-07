@@ -563,7 +563,7 @@ func (s *server) paymentNodes(w http.ResponseWriter, r *http.Request) {
 	if err != nil { message(w, 503, "支付节点配置无效："+err.Error()); return }
 	items := make([]map[string]any, 0, len(nodes))
 	for _, node := range nodes {
-		id := outboundID(node)
+		id := checkout.PaymentNodeID(node)
 		var meta map[string]any
 		if json.Unmarshal(node, &meta) != nil { continue }
 		typ, _ := meta["type"].(string)
