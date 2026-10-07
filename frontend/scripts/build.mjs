@@ -36,7 +36,7 @@ for (const name of ["app", "admin", "appearance"]) {
     .digest("hex")
     .slice(0, 12);
 }
-for (const name of ["index", "admin"]) {
+for (const name of ["index", "admin", "setup"]) {
   let html = await readFile(`frontend/pages/${name}.html`, "utf8");
   for (const [placeholder, value] of Object.entries(replacements))
     html = html.replaceAll(placeholder, value);
