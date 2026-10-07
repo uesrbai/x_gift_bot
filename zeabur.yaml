@@ -1,25 +1,60 @@
-name: xgift
+apiVersion: zeabur.com/v1
+kind: Template
+metadata:
+  name: XGift
+spec:
+  description: XGift - X Premium 礼品兑换平台
+  tags:
+    - Tool
+    - Go
+  variables:
+    - key: PUBLIC_DOMAIN
+      type: DOMAIN
+      name: 网站域名
+      description: XGift 的公开 HTTPS 域名。Zeabur 会自动绑定此域名。
+  readme: |-
+    # XGift on Zeabur
 
-build:
-  type: dockerfile
-  dockerfile: Dockerfile
+    部署后等待服务启动，在 Zeabur 服务日志中保存首次生成的管理员密码。
+    管理员入口为绑定域名的 /admin。
 
-ports:
-  - port: 8080
-    type: HTTP
+    /app/data 保存 SQLite 数据和运行状态；/app/config 保存自动生成的管理员密码和 vault 密码。
+    两个目录都已经配置为 Zeabur Volume。
 
-environment:
-  XGIFT_LISTEN:
-    value: "127.0.0.1:8787"
-
-  XGIFT_DATA_DIR:
-    value: "/app/data"
-
-  XGIFT_PASSWORD_FILE:
-    value: "/app/config/vault-password"
-
-  XGIFT_ADMIN_PASSWORD_FILE:
-    value: "/app/config/admin-password"
-
-  XGIFT_PAYMENTS_ENABLED:
-    value: "false"
+    请按项目 README 完成 X Cookie、支付卡、代理、Stripe 公钥和商品目录配置。
+    不要把 X Cookie、支付卡或 Stripe 密钥提交到 Git。
+  services:
+    - name: xgift
+      template: GIT
+      domainKey: PUBLIC_DOMAIN
+      spec:
+        source:
+          type: GITHUB
+          repoID: 1408756074
+          branch: main
+        ports:
+          - id: web
+            port: 8080
+            type: HTTP
+        volumes:
+          - id: data
+            dir: /app/data
+          - id: config
+            dir: /app/config
+        env:
+          XGIFT_ORIGIN:
+            default: \${PUBLIC_DOMAIN}
+          XGIFT_LISTEN:
+            default: 127.0.0.1:8787
+            readonly: true
+          XGIFT_DATA_DIR:
+            default: /app/data
+            readonly: true
+          XGIFT_PASSWORD_FILE:
+            default: /app/config/vault-password
+            readonly: true
+          XGIFT_ADMIN_PASSWORD_FILE:
+            default: /app/config/admin-password
+            readonly: true
+          XGIFT_PAYMENTS_ENABLED:
+            default: "false"
