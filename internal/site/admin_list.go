@@ -126,6 +126,6 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 		message(w, 503, "无法读取一致的列表，请刷新重试。")
 		return
 	}
-	paymentsReady, _ := s.paymentsAvailable()
+	paymentsReady := s.paymentEnabled()
 	reply(w, 200, map[string]any{"codes": codes, "payments_enabled": paymentsReady, "page": page, "has_more": hasMore, "folder": filter, "folders": folders, "stats": stats})
 }
