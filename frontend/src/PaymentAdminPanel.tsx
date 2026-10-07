@@ -156,7 +156,7 @@ export function PaymentAdminPanel() {
         <Stack direction={{xs:"column",sm:"row"}} spacing={1}>
           <TextField label="模板名称" value={templateForm.name} onChange={e=>setTemplateForm(v=>({...v,name:e.target.value}))} fullWidth/>
           <TextField label="国家代码" value={templateForm.country} onChange={e=>setTemplateForm(v=>({...v,country:e.target.value.toUpperCase().slice(0,2)}))} sx={{ width: { sm: 180 } }} />
-          <TextField label="州/省" value={templateForm.state} onChange={e=>setTemplateForm(v=>({...v,state:e.target.value}))} sx={{width:{sm:180}}/>
+          <TextField label="州/省" value={templateForm.state} onChange={e=>setTemplateForm(v=>({...v,state:e.target.value}))} sx={{ width: { sm: 180 } }} />
         </Stack>
         <Stack direction={{xs:"column",sm:"row"}} spacing={1}>
           <TextField label="城市" value={templateForm.city} onChange={e=>setTemplateForm(v=>({...v,city:e.target.value}))} fullWidth/>
