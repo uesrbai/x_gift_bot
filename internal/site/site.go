@@ -556,7 +556,7 @@ func (s *server) middleware(next http.Handler) http.Handler {
 
 func (s *server) paymentNodes(w http.ResponseWriter, r *http.Request) {
 	raw, err := s.vault.Get("payment-outbounds")
-	if errors.Is(err, sql.ErrNoRows) { reply(w, 200, map[string]any{"mode":"direct","nodes":[],"count":0,"available":0,"cooling":0}); return }
+	if errors.Is(err, sql.ErrNoRows) { reply(w, 200, map[string]any{"mode":"direct","nodes": []any{},"count":0,"available":0,"cooling":0}); return }
 	if err != nil { message(w, 503, "读取支付节点失败。"); return }
 	defer clear(raw)
 	nodes, err := proxy.ParseOutboundPool(raw)
