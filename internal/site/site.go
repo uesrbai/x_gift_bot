@@ -216,6 +216,20 @@ func Run(ctx context.Context) error {
 	mux.HandleFunc("POST /api/admin/folders/delete", s.admin(s.deleteFolder))
 	mux.HandleFunc("POST /api/admin/codes/move", s.admin(s.moveCodes))
 	mux.HandleFunc("POST /api/admin/codes/copy", s.admin(s.copyCode))
+	// Stable v1 API: admin-authenticated automation endpoints. These aliases
+	// intentionally reuse the same handlers as the web dashboard so validation,
+	// payment safety and audit behavior stay identical.
+	mux.HandleFunc("POST /api/v1/account/check", s.admin(s.check))
+	mux.HandleFunc("POST /api/v1/redeem", s.admin(s.redeem))
+	mux.HandleFunc("POST /api/v1/redeem/status", s.admin(s.status))
+	mux.HandleFunc("GET /api/v1/codes", s.admin(s.list))
+	mux.HandleFunc("POST /api/v1/codes", s.admin(s.generate))
+	mux.HandleFunc("POST /api/v1/codes/revoke", s.admin(s.revoke))
+	mux.HandleFunc("POST /api/v1/codes/move", s.admin(s.moveCodes))
+	mux.HandleFunc("POST /api/v1/codes/copy", s.admin(s.copyCode))
+	mux.HandleFunc("POST /api/v1/folders", s.admin(s.createFolder))
+	mux.HandleFunc("POST /api/v1/folders/rename", s.admin(s.renameFolder))
+	mux.HandleFunc("POST /api/v1/folders/delete", s.admin(s.deleteFolder))
 	addr := os.Getenv("XGIFT_LISTEN")
 	if addr == "" {
 		addr = "127.0.0.1:8787"

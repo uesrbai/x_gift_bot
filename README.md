@@ -2,6 +2,19 @@
 
 X (Twitter) Premium 礼品兑换平台。你生成兑换码发给用户，用户在网页上输入兑换码和自己的 X 用户名，系统自动完成 Premium 赠送的下单与付款。
 
+> **这是什么版本？**
+>
+> 这是基于原版 **x_gift_bot** 重构和二次开发的一版，重点放在更适合实际部署的 Web 初始化、Zeabur Docker 部署、后台管理和自动化 API。
+>
+> 本版本项目地址：[uesrbai/x_gift_bot](https://github.com/uesrbai/x_gift_bot/tree/main)
+>
+> 本版本维护者 / 贡献者：**@uesrbai**（GitHub：[uesrbai](https://github.com/uesrbai)）。
+>
+> 协议仍为 **MIT License**，完整协议见仓库根目录 [LICENSE](LICENSE)。
+
+
+X (Twitter) Premium 礼品兑换平台。你生成兑换码发给用户，用户在网页上输入兑换码和自己的 X 用户名，系统自动完成 Premium 赠送的下单与付款。
+
 - **兑换页**：用户自助兑换，实时显示处理进度
 - **管理后台**：生成/停用兑换码、批次文件夹、统计面板、订单状态
 - **安全**：凭据逐条 AES-256-GCM 加密存储，付款前逐项校验金额与商户，付款确认只提交一次
@@ -85,7 +98,7 @@ Zeabur 会自动为 HTTP 服务处理公开域名和 HTTPS；应用内部仍保�
 ### 第二步：构建
 
 ```sh
-git clone https://github.com/mizorewww/x_gift_bot.git
+git clone https://github.com/uesrbai/x_gift_bot.git
 cd x_gift_bot
 npm ci && npm run build        # 构建前端（只需一次，产物已随仓库提交时可跳过）
 go build -tags with_quic,with_utls -o bin/xgift ./cmd/xgift
@@ -148,6 +161,25 @@ curl https://你的域名/healthz     # {"ok":true,...} 即成功
 1. 在「生成兑换码」选套餐、数量、批次名，点生成，复制或下载兑换码发给用户。
 2. 顶部「统计概览」随时查看兑换进度和成功率。
 3. 用户打开 `https://你的域名`，输入兑换码和 X 用户名即可完成充值。
+
+## 自动化 API
+
+如果你不是只想用网页，而是希望自己的机器人、订单系统或后台直接管理 XGift，可以使用稳定的 `/api/v1/*` 管理 API。
+
+目前包括：
+
+- 查询 X 账号是否可以接收 Premium
+- 发起兑换、查询兑换状态
+- 批量生成兑换码
+- 停用兑换码
+- 查询兑换码和批次
+- 把兑换码放入/移动到文件夹
+- 创建、重命名、删除文件夹
+- 取回管理员自己的完整兑换码
+
+API 使用管理员 HTTP Basic Auth，不会把卡密、Cookie、付款卡等敏感数据放进普通列表接口。
+
+详细请求格式、返回值和 curl 示例见 [API 文档](docs/api.md)。
 
 ## 日常维护
 
