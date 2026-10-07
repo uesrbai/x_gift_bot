@@ -595,7 +595,12 @@ func (s *server) setPaymentNodes(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil { message(w, 400, "支付节点配置无效："+err.Error()); return }
 	if len(nodes) > 128 { message(w, 400, "支付节点最多 128 个。"); return }
-	if err = s.vault.Put("payment-outbounds", raw); err != nil { message(w, 503, "支付节点保存失败。"); return }
+	// Always store the canonical bare array, even when the admin pasted
+	// { "outbounds": [...] }, because the checkout/probe layer consumes an array.
+	canonical, err := json.Marshal(nodes)
+	if err != nil { message(w, 400, "支付节点配置无法标准化。"); return }
+	defer clear(canonical)
+	if err = s.vault.Put("payment-outbounds", canonical); err != nil { message(w, 503, "支付节点保存失败。"); return }
 	network, err := checkout.PaymentNetworkStatus(s.vault)
 	if err != nil { message(w, 503, "支付节点已保存，但状态读取失败。"); return }
 	reply(w, 200, map[string]any{"ok":true,"mode":network.Mode,"count":network.Nodes,"available":network.Available,"cooling":network.Cooling})
