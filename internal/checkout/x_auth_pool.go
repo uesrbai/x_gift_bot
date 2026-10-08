@@ -144,9 +144,7 @@ func ValidateXAuthProfile(p XAuthProfile) error {
 	if p.AuthToken == "" || p.Ct0 == "" {
 		return errors.New("auth_token 和 ct0 都不能为空")
 	}
-	if strings.ContainsAny(p.AuthToken, "
-;") || strings.ContainsAny(p.Ct0, "
-;") {
+	if strings.ContainsAny(p.AuthToken, "\r\n;") || strings.ContainsAny(p.Ct0, "\r\n;") {
 		return errors.New("Cookie 值包含非法字符")
 	}
 	if len(p.AuthToken) > 4096 || len(p.Ct0) > 4096 {
