@@ -197,6 +197,11 @@ func (s *server) createLink(ctx context.Context, q manualLinkRequest, publicOwne
 	if publicOwner == "" {
 		o.body["failure_stage"] = stage
 		o.body["verification_detail"] = checkout.ManualLinkFailureDetail(err)
+		if httpStatus, errorType, errorCode := checkout.ManualLinkStripeResponse(err); httpStatus != 0 {
+			o.body["stripe_http_status"] = httpStatus
+			if errorType != "" { o.body["stripe_error_type"] = errorType }
+			if errorCode != "" { o.body["stripe_error_code"] = errorCode }
+		}
 	}
 	log.Printf("manual link failed: public=%t months=%d reason=%s stage=%s", publicOwner != "", q.Months, reason, stage)
 	return o
