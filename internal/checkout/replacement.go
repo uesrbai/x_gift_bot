@@ -31,6 +31,27 @@ func inactiveCheckout(err error) bool {
 // full merchant/recipient/amount/intent checks before using any returned data.
 // Never retry authentication failures, rate limits, payment submissions or
 // an ambiguous successful Stripe result through this path.
+// ExistingCheckoutLookupError records only allowlisted Stripe response fields
+// for *both* attempts to inspect an already saved session. Neither a missing
+// resource nor an init failure proves the payment did not happen.
+type ExistingCheckoutLookupError struct {
+	InitHTTP, ReadHTTP int
+	InitType, InitCode string
+	ReadType, ReadCode string
+	Cause error
+}
+
+func (e *ExistingCheckoutLookupError) Error() string {
+	return "saved Stripe checkout unavailable from both initialization and read-only lookup; payment state remains unknown"
+}
+func (e *ExistingCheckoutLookupError) Unwrap() error { return e.Cause }
+
+func checkoutLookupFields(err error) (status int, typ, code string) {
+	var se *stripeError
+	if !errors.As(err, &se) { return 0, "", "" }
+	return se.HTTP, safeErrorField(se.Type), safeErrorField(se.Code)
+}
+
 func readExistingCheckoutPage(ctx context.Context, s *stripeClient, r *Record) (*paymentPage, error) {
 	page, err := s.page(ctx, r, true)
 	if err == nil {
@@ -46,8 +67,15 @@ func readExistingCheckoutPage(ctx context.Context, s *stripeClient, r *Record) (
 		if lookupErr == nil {
 			return snapshot, nil
 		}
-		// Preserve the original /init error and its context for diagnostics.
-		return page, err
+		initHTTP, initType, initCode := checkoutLookupFields(err)
+		readHTTP, readType, readCode := checkoutLookupFields(lookupErr)
+		// Never infer an unpaid session from 404. Two errors provide a safe
+		// diagnostic only; the caller keeps the order blocked as before.
+		return page, &ExistingCheckoutLookupError{
+			InitHTTP: initHTTP, InitType: initType, InitCode: initCode,
+			ReadHTTP: readHTTP, ReadType: readType, ReadCode: readCode,
+			Cause: err,
+		}
 	default:
 		return page, err
 	}

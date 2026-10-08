@@ -202,6 +202,12 @@ func (s *server) createLink(ctx context.Context, q manualLinkRequest, publicOwne
 			if errorType != "" { o.body["stripe_error_type"] = errorType }
 			if errorCode != "" { o.body["stripe_error_code"] = errorCode }
 		}
+		if status, typ, code := checkout.ManualLinkReadOnlyResponse(err); status != 0 {
+			o.body["stripe_read_http_status"] = status
+			if typ != "" { o.body["stripe_read_error_type"] = typ }
+			if code != "" { o.body["stripe_read_error_code"] = code }
+			o.body["message"] = "原 Stripe 会话的初始化和只读核验均未成功，尚无法判断付款是否已发生；请核对当前 Stripe 发布密钥是否对应 X 创建的订单，以及原会话是否仍可访问。此操作未重新建单或扣款。"
+		}
 	}
 	log.Printf("manual link failed: public=%t months=%d reason=%s stage=%s", publicOwner != "", q.Months, reason, stage)
 	return o
