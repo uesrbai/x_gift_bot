@@ -151,6 +151,8 @@ func (s *server) createLink(ctx context.Context, q manualLinkRequest, publicOwne
 		reason, o = "private_order", failed(409, "该账号已有兑换或后台订单，请使用原付款链接或联系管理员；主页不会重复创建订单。")
 	case errors.Is(err, checkout.ErrPublicLinkPending):
 		reason, o = "creation_pending", failed(409, "暂未取得付款链接，系统没有提交付款。请用相同账号和套餐重试；请勿同时使用其他入口重复建单。")
+	case errors.Is(err, checkout.ErrRecipientIdentityMismatch):
+		reason, o = "recipient_identity_mismatch", failed(409, "X 上游两次返回的收款账号标识不一致，无法安全创建链接；这不代表存在本地订单。请稍后重新检查账号，切勿重复付款。")
 	case errors.Is(err, checkout.ErrPublicLinkConflict):
 		reason, o = "public_order_conflict", failed(409, "该账号暂时无法生成新链接，请使用原付款页面或联系管理员核实。")
 	case errors.Is(err, checkout.ErrVerifyUnpaid) && publicOwner != "":
