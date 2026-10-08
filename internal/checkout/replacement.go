@@ -24,6 +24,35 @@ func inactiveCheckout(err error) bool {
 	return errors.As(err, &e) && e.Code == "checkout_not_active_session"
 }
 
+// readExistingCheckoutPage checks the recorded Stripe session, not a new one.
+// Some inactive sessions reject POST /init with a non-specific 400/404/410/422
+// instead of checkout_not_active_session. In that case, try a READ-ONLY GET
+// before declaring the old payment unknown. The caller still performs the
+// full merchant/recipient/amount/intent checks before using any returned data.
+// Never retry authentication failures, rate limits, payment submissions or
+// an ambiguous successful Stripe result through this path.
+func readExistingCheckoutPage(ctx context.Context, s *stripeClient, r *Record) (*paymentPage, error) {
+	page, err := s.page(ctx, r, true)
+	if err == nil {
+		return page, nil
+	}
+	var upstream *stripeError
+	if !errors.As(err, &upstream) {
+		return page, err
+	}
+	switch upstream.HTTP {
+	case 400, 404, 410, 422:
+		snapshot, lookupErr := s.page(ctx, r, false)
+		if lookupErr == nil {
+			return snapshot, nil
+		}
+		// Preserve the original /init error and its context for diagnostics.
+		return page, err
+	default:
+		return page, err
+	}
+}
+
 // expiredUnsubmittedCheckout requires explicit Stripe evidence that an
 // untouched one-time checkout expired without a payment intent or charge.
 // This is not, by itself, permission to create a replacement: the operator
@@ -110,7 +139,7 @@ func prepareRecoveryLink(ctx context.Context, v *vault.Vault, r *Record, s *stri
 	var lookupErr error
 	explicitExpiredUnpaid := false
 	if unsubmitted(r) {
-		page, err := s.page(ctx, r, true)
+		page, err := readExistingCheckoutPage(ctx, s, r)
 		lookupErr = err
 		if err == nil {
 			if err = page.guard(r, plan, false); err != nil {
