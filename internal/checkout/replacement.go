@@ -24,6 +24,19 @@ func inactiveCheckout(err error) bool {
 	return errors.As(err, &e) && e.Code == "checkout_not_active_session"
 }
 
+// expiredUnsubmittedCheckout requires explicit Stripe evidence that an
+// untouched one-time checkout expired without a payment intent or charge.
+// This is not, by itself, permission to create a replacement: the operator
+// must still affirm no charge, and the normal replacement creation checks
+// and archival of the original order remain mandatory.
+func expiredUnsubmittedCheckout(r *Record, page *paymentPage, plan Plan) bool {
+	return r != nil && page != nil && r.Status == "created" &&
+		unsubmitted(r) && page.Status == "expired" &&
+		page.PaymentStatus == "unpaid" && page.IntentPresent &&
+		page.IntentNull && page.Intent == nil &&
+		page.Total.Due == plan.Minor && page.Group.Due == plan.Minor
+}
+
 // PrepareRecoveryLinkForRecipient can create a checkout, but NEVER tokenizes or
 // confirms a card. Caller holds checkout.lock. Replacement is opt-in and audited.
 func PrepareRecoveryLinkForRecipient(ctx context.Context, v *vault.Vault, user, recipient string, port, months int, verifiedUnpaid bool) (*Record, error) {
@@ -95,6 +108,7 @@ func prepareRecoveryLink(ctx context.Context, v *vault.Vault, r *Record, s *stri
 		return r, err
 	}
 	var lookupErr error
+	explicitExpiredUnpaid := false
 	if unsubmitted(r) {
 		page, err := s.page(ctx, r, true)
 		lookupErr = err
@@ -107,9 +121,22 @@ func prepareRecoveryLink(ctx context.Context, v *vault.Vault, r *Record, s *stri
 				r.LastError = nil
 				return r, save(v, r)
 			}
-			if err = page.guard(r, plan, true); err != nil {
-				return r, err
+			if page.Status == "expired" {
+				// Stripe can return a valid *expired* checkout page instead of
+				// checkout_not_active_session. The previous open-only guard
+				// rejected it before the verified-unpaid replacement protocol.
+				// Never treat an expired checkout with a PaymentIntent,
+				// payment submission, or ambiguous evidence as safe.
+				if !expiredUnsubmittedCheckout(r, page, plan) {
+					return r, errors.New("expired checkout is not conclusively unpaid")
+				}
+				explicitExpiredUnpaid = true
+			} else {
+				if err = page.guard(r, plan, true); err != nil {
+					return r, err
+				}
 			}
+			if !explicitExpiredUnpaid {
 			if err = eligible(); err != nil {
 				return r, err
 			}
@@ -121,6 +148,7 @@ func prepareRecoveryLink(ctx context.Context, v *vault.Vault, r *Record, s *stri
 				return r, err
 			}
 			return r, holdPublicCheckout(v, r, plan, time.Now())
+			}
 		}
 	} else {
 		if err := verifySubmission(v, r, plan); err != nil {
@@ -157,7 +185,7 @@ func prepareRecoveryLink(ctx context.Context, v *vault.Vault, r *Record, s *stri
 			lookupErr = err
 		}
 	}
-	if !inactiveCheckout(lookupErr) {
+	if !explicitExpiredUnpaid && !inactiveCheckout(lookupErr) {
 		return r, lookupErr
 	}
 	if !verified {
