@@ -99,6 +99,13 @@ func failed(status int, msg string) linkOutcome {
 	return linkOutcome{status: status, body: map[string]any{"message": msg}}
 }
 
+// Keep an upstream business verification failure distinct from reverse-proxy
+// HTTP 502/504 errors. Cloudflare can replace a 5xx JSON body with HTML,
+// which prevents the admin UI from displaying the real refusal reason.
+func failedUpstreamVerification() linkOutcome {
+	return failed(http.StatusFailedDependency, "X 或 Stripe 未能核实原订单，暂时不能安全提供付款链接。没有确认原付款状态前，请勿重复建单或支付；请查看后台订单诊断。")
+}
+
 func (o linkOutcome) write(w http.ResponseWriter) {
 	if o.retryIn > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int((o.retryIn+time.Second-1)/time.Second)))
@@ -172,7 +179,7 @@ func (s *server) createLink(ctx context.Context, q manualLinkRequest, publicOwne
 		// failure. Returning HTTP 502 here caused Cloudflare to replace our
 		// JSON error with its own HTML page, hiding the actionable reason.
 		// 424 preserves our structured error without permitting a new order.
-		reason, o = "upstream_or_order_verification", failed(http.StatusFailedDependency, "X 或 Stripe 未能核实原订单，暂时不能安全提供付款链接。没有确认原付款状态前，请勿重复建单或支付；请查看后台订单诊断。")
+		reason, o = "upstream_or_order_verification", failedUpstreamVerification()
 		if errors.Is(err, checkout.ErrXReadFailure) {
 			reason = "x_read_failure"
 			o.body["message"] = "读取 X 账号或套餐信息失败，尚不能核实赠送资格或订单。请检查后台 X Cookie、网络及加密诊断记录；本次不会绕过安全验证。"
