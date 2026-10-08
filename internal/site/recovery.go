@@ -29,6 +29,7 @@ type recoveryItem struct {
 }
 type recoveryBatch struct {
 	Mode           string         `json:"mode"`
+	AutoAvailable  bool           `json:"auto_available"`
 	VerifiedUnpaid bool           `json:"verified_unpaid"`
 	ID             string         `json:"id"`
 	State          string         `json:"state"`
@@ -213,7 +214,7 @@ func (s *server) recoveryPreview(w http.ResponseWriter, r *http.Request) {
 	if in.Mode == "" {
 		in.Mode = "pay"
 	}
-	if in.Mode != "pay" && in.Mode != "links" {
+	if in.Mode != "pay" && in.Mode != "links" && in.Mode != "auto_fallback" {
 		message(w, 400, "补单操作类型无效。")
 		return
 	}
@@ -234,12 +235,13 @@ func (s *server) recoveryPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	last4, cardCount, binding, err := checkout.CardSummary(s.vault)
 	if err != nil {
-		if in.Mode != "links" {
+		// The combined mode may skip automatic payment only when the card pool
+		// explicitly reports no usable card. Vault/validation errors fail closed.
+		if in.Mode != "links" && !(in.Mode == "auto_fallback" && errors.Is(err, checkout.ErrNoUsableCard)) {
 			message(w, 503, "付款方式配置无法读取。")
 			return
 		}
-		// 仅生成链接不提交付款卡;未配置付款卡时也允许预览。
-		last4, cardCount, binding = "", 0, ""
+		last4, binding = "", ""
 	}
 	paused, err := checkout.PaymentPaused(s.vault)
 	if err != nil {
@@ -272,7 +274,7 @@ func (s *server) recoveryPreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	q := &recoveryBatch{Mode: in.Mode, ID: token(16), State: "preview", Created: time.Now().Unix(), Last4: last4, Cards: cardCount, Binding: binding, Paused: paused, Items: []recoveryItem{}}
+	q := &recoveryBatch{Mode: in.Mode, AutoAvailable: in.Mode != "links" && binding != "", ID: token(16), State: "preview", Created: time.Now().Unix(), Last4: last4, Cards: cardCount, Binding: binding, Paused: paused, Items: []recoveryItem{}}
 	for _, id := range ids {
 		item, e := s.recoveryCandidate(id)
 		if e != nil {
@@ -284,6 +286,11 @@ func (s *server) recoveryPreview(w http.ResponseWriter, r *http.Request) {
 	q.Message = "预览有效期 10 分钟。确认后每笔最多尝试一次，逐笔间隔至少 30 秒。"
 	if q.Mode == "links" {
 		q.Message = "仅准备付款链接，不付款。预览有效期 10 分钟；请核对客户和旧订单扣款结果。"
+	} else if q.Mode == "auto_fallback" {
+		q.Message = "优先使用已保存的支付卡；仅在确认未新增付款提交且原链接通过实时核验后，才提供手动付款链接。结果不明或需银行验证时停止，不会自动切换支付方式。"
+		if !q.AutoAvailable {
+			q.Message = "当前没有可用的自动付款卡：本批次仅尝试安全准备手动付款链接，不会自动扣款。"
+		}
 	}
 	if err = s.saveRecovery(q); err != nil {
 		message(w, 503, "无法保存预览。")
@@ -316,6 +323,12 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 		reply(w, 200, map[string]any{"batch": s.recoveryView(q)})
 		return
 	}
+	// A pay-only preview from an older deployment has no auto-availability
+	// snapshot. Re-preview instead of executing a charge with stale consent.
+	if q.Mode == "pay" && !q.AutoAvailable {
+		message(w, 409, "请重新预览付款卡和订单后再启动自动付款。")
+		return
+	}
 	if time.Now().Unix()-q.Created > 3600 {
 		message(w, 409, "预览已过期，请重新生成。")
 		return
@@ -333,7 +346,7 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 	}()
 	binding := q.Binding
 	// 仅生成链接不涉及付款卡,跳过卡集一致性核验。
-	if q.Mode != "links" {
+	if q.Mode != "links" && q.AutoAvailable {
 		_, _, current, err := checkout.CardSummary(s.vault)
 		if err != nil || current != binding {
 			message(w, 409, "付款方式已变化，请重新预览。")
@@ -361,13 +374,14 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 		message(w, 503, "无法读取付款保护状态。")
 		return
 	}
-	if q.Mode != "links" && paused && !in.Reset {
+	if q.AutoAvailable && paused && !in.Reset {
 		message(w, 409, "付款保护已暂停，请勾选确认重新尝试。")
 		return
 	}
 	q.VerifiedUnpaid = in.VerifiedUnpaid
 	q.State = "running"
 	q.Message = "管理员已确认，正在逐笔核验和补单。"
+	if q.Mode == "auto_fallback" { q.Message = "自动付款优先；只有安全核验通过，才会提供手动链接。" }
 	if q.Mode == "links" {
 		q.Message = "正在逐笔核验并准备付款链接，本任务不付款。"
 	}
@@ -375,7 +389,7 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 		message(w, 503, "无法保存补单任务，未启动。")
 		return
 	}
-	if q.Mode != "links" && paused {
+	if q.AutoAvailable && paused {
 		if err = checkout.ResetManualPaymentPause(s.vault); err != nil {
 			q.State = "stopped"
 			q.Message = "无法恢复付款保护，任务未启动。"
@@ -473,7 +487,7 @@ func (s *server) runRecovery(id, binding string) {
 		if err != nil {
 			return
 		}
-		state, detail, stop := s.recoverOne(item, binding, q.Mode, q.VerifiedUnpaid)
+		state, detail, stop := s.recoverOne(item, binding, q.Mode, q.VerifiedUnpaid, q.AutoAvailable)
 		s.recoveryMu.Lock()
 		q, err = s.loadRecovery()
 		if err != nil || q == nil || q.ID != id {
@@ -517,8 +531,8 @@ func (s *server) runRecovery(id, binding string) {
 		}
 	}
 }
-func (s *server) recoverOne(item recoveryItem, binding, mode string, verified bool) (state, detail string, stop bool) {
-	if mode != "links" {
+func (s *server) recoverOne(item recoveryItem, binding, mode string, verified, autoAvailable bool) (state, detail string, stop bool) {
+	if mode != "links" && autoAvailable {
 		_, _, current, err := checkout.CardSummary(s.vault)
 		if err != nil || current != binding {
 			return "blocked", "付款方式配置变化，已停止", true
@@ -540,12 +554,13 @@ func (s *server) recoverOne(item recoveryItem, binding, mode string, verified bo
 	clear(beforeRaw)
 	ctx, cancel := context.WithTimeout(s.ctx, 240*time.Second)
 	defer cancel()
-	record, err := checkout.RecoverWithNewLink(ctx, s.vault, item.Username, item.Recipient, s.port, item.Months, verified, mode == "links")
+	linksOnly := mode == "links" || (mode == "auto_fallback" && !autoAvailable)
+	record, err := checkout.RecoverWithNewLink(ctx, s.vault, item.Username, item.Recipient, s.port, item.Months, verified, linksOnly)
 	state, detail = "blocked", "未能安全完成，原订单已保留；请检查诊断记录"
 	if record != nil && record.Status == "succeeded" && record.Username == item.Username && record.RecipientID == item.Recipient && record.Months == item.Months && record.Amount == item.Amount && record.Currency == item.Currency {
 		state = "succeeded"
 		detail = fmt.Sprintf("已为 @%s 完成 %d 个月 Premium 赠送。", item.Username, item.Months)
-	} else if err == nil && mode == "links" && checkout.CheckoutLink(record) != "" {
+	} else if err == nil && linksOnly && checkout.CheckoutLink(record) != "" {
 		state, detail = "link_ready", "补单付款链接已准备好，本次未付款。"
 	} else if checkout.IsPaymentDeclined(record) && (record.RecoveryAttempts > before.RecoveryAttempts || record.SubmittedAt > before.SubmittedAt) {
 		state = "declined"
@@ -557,6 +572,28 @@ func (s *server) recoverOne(item recoveryItem, binding, mode string, verified bo
 		state = "requires_action"
 		detail = "需要持卡人完成银行验证，未再次提交。"
 		stop = true
+	}
+	// An automatic failure may expose a manual link only if the persisted
+	// checkout still has NO payment submission evidence. The link must then
+	// pass the existing live Stripe/X verification path. A decline, pending
+	// confirmation, 3DS requirement or unknown outcome cannot trigger fallback.
+	if mode == "auto_fallback" && autoAvailable && state == "blocked" && err != nil && !errors.Is(err, checkout.ErrPaymentPaused) {
+		currentRaw, readErr := s.vault.Get("checkout:" + item.Recipient)
+		if readErr == nil {
+			var current checkout.Record
+			readErr = json.Unmarshal(currentRaw, &current)
+			clear(currentRaw)
+			if readErr == nil && safeAutoFallback(&before, &current) {
+				manual, manualErr := checkout.PrepareRecoveryLinkForRecipient(ctx, s.vault, item.Username, item.Recipient, s.port, item.Months, verified)
+				if manualErr == nil && manual != nil && manual.Status == "succeeded" {
+					state, detail = "succeeded", "已核实原付款成功，无需再次付款。"
+				} else if manualErr == nil && checkout.CheckoutLink(manual) != "" {
+					state, detail = "link_ready", "自动付款未提交；已重新核实账单未付款。请管理员通过提供的链接手动完成付款。"
+				} else if errors.Is(manualErr, checkout.ErrVerifyUnpaid) {
+					state, detail = "needs_verification", "原链接已失效；必须先核对原付款，再勾选确认未扣款以准备新链接。本次未重复付款。"
+				}
+			}
+		}
 	}
 	if errors.Is(err, checkout.ErrNotEligible) || errors.Is(err, checkout.ErrUserNotFound) {
 		state = "skipped"
@@ -584,7 +621,7 @@ func (s *server) recoverOne(item recoveryItem, binding, mode string, verified bo
 		detail = checkout.ManualRecoveryErrorMessage(err)
 		stop = true
 	}
-	if paused, e := checkout.PaymentPaused(s.vault); e != nil || paused && mode != "links" {
+	if paused, e := checkout.PaymentPaused(s.vault); e != nil || paused && mode != "links" && autoAvailable {
 		stop = true
 	}
 	siteState := "review"

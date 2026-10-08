@@ -36,7 +36,7 @@ type Detail = {
 };
 export type RecoverySelection = {
   id: string;
-  mode: "links" | "pay";
+  mode: "links" | "pay" | "auto_fallback";
   seq: number;
 };
 export function CustomerPanel({
@@ -44,7 +44,7 @@ export function CustomerPanel({
   onPrepare,
 }: {
   selected: { id: string; seq: number } | null;
-  onPrepare: (id: string, mode: "links" | "pay") => void;
+  onPrepare: (id: string, mode: "links" | "pay" | "auto_fallback") => void;
 }) {
   const [username, setUsername] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -90,7 +90,7 @@ export function CustomerPanel({
       setNotice("复制失败，请选中下方完整兑换码手动复制。");
     }
   }
-  function prepare(mode: "links" | "pay") {
+  function prepare(mode: "links" | "pay" | "auto_fallback") {
     if (!detail) return;
     const id = detail.order?.id;
     if (!id) return;
@@ -234,7 +234,7 @@ export function CustomerPanel({
               )}
               {detail.can_recover && (
                 <Alert severity="info">
-                  「仅生成补单链接」不会付款；「单独补单」会先展示这一笔订单，确认后才尝试付款。
+                  「仅生成补单链接」不会付款；「自动优先」会先预览并请求你确认自动付款；只有未新增支付且原账单实时核验通过，才会提供手动付款链接。
                 </Alert>
               )}
             </Stack>
@@ -247,8 +247,8 @@ export function CustomerPanel({
               <Button variant="outlined" onClick={() => prepare("links")}>
                 仅生成补单链接
               </Button>
-              <Button variant="contained" onClick={() => prepare("pay")}>
-                单独补单
+              <Button variant="contained" onClick={() => prepare("auto_fallback")}>
+                自动优先 · 安全失败后手动链接
               </Button>
             </>
           )}

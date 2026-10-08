@@ -49,6 +49,7 @@ type Item = {
 };
 type Batch = {
   mode: string;
+  auto_available?: boolean;
   id: string;
   state: string;
   created: number;
@@ -103,7 +104,7 @@ function BatchDetails({ batch }: { batch: Batch }) {
   return <>
     <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center">
       <Chip size="small" label={labels[batch.state] || batch.state} />
-      <Typography variant="body2">{batch.mode === "links" ? "仅生成补单链接" : batch.cards && batch.cards > 1 ? `付款卡 ${batch.cards} 张随机轮换（当前尾号 ${batch.last4}）` : `付款卡尾号 ${batch.last4}`} · {resultSummary(batch.items)}</Typography>
+      <Typography variant="body2">{batch.mode === "links" ? "仅生成补单链接" : batch.mode === "auto_fallback" ? (batch.auto_available ? "自动付款优先 · 安全失败后手动链接" : "无可用付款卡 · 仅准备手动链接") : batch.cards && batch.cards > 1 ? `付款卡 ${batch.cards} 张随机轮换（当前尾号 ${batch.last4}）` : `付款卡尾号 ${batch.last4}`} · {resultSummary(batch.items)}</Typography>
     </Stack>
     <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
       创建于 {taskTime(batch.created)} · 更新于 {taskTime(batch.updated || batch.created)}
@@ -250,6 +251,8 @@ export function RecoveryPanel({
   const [reset, setReset] = useState(false);
   const [verifiedUnpaid, setVerifiedUnpaid] = useState(false);
   const linksOnly = batch?.mode === "links";
+  const autoFallback = batch?.mode === "auto_fallback";
+  const willAutoPay = !linksOnly && (!autoFallback || Boolean(batch?.auto_available));
   const mutating = useRef(false);
   const sequence = useRef(0);
   // 上一个补单操作在途时到达的 selection 先暂存,完成后补发,避免"点了没反应"。
@@ -296,7 +299,7 @@ export function RecoveryPanel({
   }, [selection]);
   async function act(
     action: "preview" | "start" | "stop",
-    target?: { id?: string; mode: "pay" | "links" },
+    target?: { id?: string; mode: "pay" | "links" | "auto_fallback" },
   ) {
     if (mutating.current) return;
     mutating.current = true;
@@ -307,7 +310,7 @@ export function RecoveryPanel({
       const data = await adminApi<Response>(
         `/api/admin/recovery/${action}`,
         action === "preview"
-          ? { id: target?.id || "", mode: target?.mode || "pay" }
+          ? { id: target?.id || "", mode: target?.mode || "auto_fallback" }
           : action === "start"
             ? {
                 id: batch?.id,
@@ -367,7 +370,7 @@ export function RecoveryPanel({
               管理员手动补单
             </Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
-              支持只生成补单链接，或确认后使用已保存的付款卡付款。服务器逐笔处理，间隔至少
+              支持优先使用已保存的付款卡；仅在没有新增支付提交且原账单核验通过时提供手动链接。也可单独选择仅自动付款或仅生成链接。服务器逐笔处理，间隔至少
               30 秒。
             </Typography>
           </Box>
@@ -387,9 +390,16 @@ export function RecoveryPanel({
             <Button
               variant="contained"
               disabled={busy || active}
-              onClick={() => void act("preview")}
+              onClick={() => void act("preview", { mode: "auto_fallback" })}
             >
-              预览并补单
+              自动优先 · 失败后手动链接
+            </Button>
+            <Button
+              variant="outlined"
+              disabled={busy || active}
+              onClick={() => void act("preview", { mode: "pay" })}
+            >
+              仅自动补单
             </Button>
             {active && (
               <Button
@@ -465,7 +475,7 @@ export function RecoveryPanel({
           aria-describedby="recovery-dialog-description"
         >
           <DialogTitle id="recovery-title">
-            {linksOnly ? "确认生成补单链接（不付款）" : "确认手动补单"}
+            {linksOnly ? "确认生成补单链接（不付款）" : autoFallback ? "确认自动优先 · 安全失败后手动链接" : "确认自动补单"}
           </DialogTitle>
           <DialogContent id="recovery-dialog-description">
             {error && (
@@ -478,7 +488,7 @@ export function RecoveryPanel({
                 "只生成或更新付款链接，不使用付款卡付款；核验并处理"
               ) : (
                 <>
-                  {batch?.cards && batch.cards > 1 ? <>使用 <strong>{batch.cards}</strong> 张付款卡随机轮换（当前尾号 <strong>{batch?.last4}</strong>）</> : <>使用付款卡尾号 <strong>{batch?.last4}</strong></>}，核验并处理
+                  {willAutoPay ? (batch?.cards && batch.cards > 1 ? <>优先使用 <strong>{batch.cards}</strong> 张付款卡轮换（当前尾号 <strong>{batch?.last4}</strong>）</> : <>优先使用付款卡尾号 <strong>{batch?.last4}</strong></>) : <>无可用自动付款卡，只核验并准备链接</>}，核验并处理
                 </>
               )}{" "}
               <strong>{pending}</strong> 笔订单，账单总额{" "}
@@ -487,10 +497,14 @@ export function RecoveryPanel({
             <Alert severity="warning" sx={{ mb: 2 }}>
               {linksOnly
                 ? "这一步只准备付款链接，不付款。有效链接会复用；旧链接失效时，核验并保留旧记录后生成新链接。"
-                : "确认后会尝试真实付款。旧链接失效时可先生成新链接；已付款只同步结果，不符合条件的订单跳过。普通拒付只标记该单失败；结果不明、需银行验证或支付方明确禁止重试时停止任务。"}
+                : autoFallback
+                  ? willAutoPay
+                    ? "确认后优先尝试真实付款。仅在没有新付款提交、且实时核验原账单安全时才提供手动付款链接。已提交、拒付后状态不明、需要银行验证等情况会停止，不会自动切换支付方式。"
+                    : "当前没有可用付款卡，本次不自动付款；只有原账单经实时核验后，才会提供手动付款链接。"
+                  : "确认后会尝试真实付款。旧链接失效时可先生成新链接；已付款只同步结果，不符合条件的订单跳过。普通拒付只标记该单失败；结果不明、需银行验证或支付方明确禁止重试时停止任务."}
             </Alert>
             {batch && <Orders items={batch.items} />}
-            {batch?.paused && !linksOnly && (
+            {batch?.paused && willAutoPay && (
               <FormControlLabel
                 control={
                   <Checkbox
@@ -525,7 +539,11 @@ export function RecoveryPanel({
               label={
                 linksOnly
                   ? "我已核对客户和套餐，确认仅生成补单链接，不付款。"
-                  : "我已核对客户、套餐、账单金额和付款卡，确认启动本批次付款。"
+                  : autoFallback
+                    ? willAutoPay
+                      ? "我已核对原付款状态、客户、套餐和付款卡；同意优先自动付款，且仅在安全核验后提供手动链接。"
+                      : "我已核对原订单，确认本次不自动扣款，仅安全准备手动链接。"
+                    : "我已核对客户、套餐、账单金额和付款卡，确认启动本批次付款。"
               }
             />
           </DialogContent>
@@ -539,7 +557,7 @@ export function RecoveryPanel({
                 busy ||
                 !consent ||
                 !pending ||
-                (!linksOnly && batch?.paused && !reset) ||
+                (willAutoPay && batch?.paused && !reset) ||
                 batch?.state !== "preview"
               }
               onClick={() => void act("start")}
@@ -548,7 +566,9 @@ export function RecoveryPanel({
                 ? "正在提交…"
                 : linksOnly
                   ? "确认生成链接（不付款）"
-                  : "确认付款并启动补单"}
+                  : autoFallback
+                    ? willAutoPay ? "自动付款优先 · 安全回退" : "核验后准备手动链接"
+                    : "确认付款并启动补单"}
             </Button>
           </DialogActions>
         </Dialog>
