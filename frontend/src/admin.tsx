@@ -55,6 +55,7 @@ import { RecoveryPanel } from "./RecoveryPanel";
 import { StatsPanel } from "./StatsPanel";
 import { ManualPaymentPanel } from "./ManualPaymentPanel";
 import { PaymentAdminPanel } from "./PaymentAdminPanel";
+import { XAuthAdminPanel } from "./XAuthAdminPanel";
 
 type Code = AdminCode;
 type Listing = {
@@ -436,6 +437,7 @@ function Admin() {
         />
       </Box>
       <ManualPaymentPanel />
+      <XAuthAdminPanel />
       <PaymentAdminPanel />
       <RecoveryPanel selection={recoverySelection} />
       <StatsPanel refreshSignal={statsSignal} />
