@@ -261,7 +261,13 @@ export function ManualPaymentPanel({ publicMode = false, onShow }: { publicMode?
       </Box>}
       {publicMode && busy && <PaymentQueueCard reconnecting={reconnecting} onNotify={canNotify ? () => void enableNotification() : undefined} notifyReady={notifyReady} onCancel={queueProgress.status === "submitting" ? undefined : () => void cancelQueue()} cancelling={cancelling} progress={queueProgress} username={cleanUser} months={months} price={plans.find((p) => p.months === months) ? price(plans.find((p) => p.months === months)!) : ""} />}
       {!publicMode && busy && <LinearProgress aria-label="正在核对账号并生成付款链接" sx={{ mt: 1 }} />}
-      {error && <Alert ref={errorAlert} severity="error" sx={{ mt: 2, scrollMarginTop: 24 }}>{error}</Alert>}
+      {error && <Alert ref={errorAlert} severity="error" sx={{ mt: 2, scrollMarginTop: 24 }}>
+        <Typography variant="body2">{error}</Typography>
+        {!publicMode && diagnostic && <Box sx={{ mt: 1 }}>
+          <Typography variant="body2">诊断代码：{diagnostic.reason}</Typography>
+          {diagnostic.check && <Typography variant="body2">请先使用页面上方「按客户查询」输入同一 X 用户名，查看原订单和付款状态。未确认前不要重复创建或付款。</Typography>}
+        </Box>}
+      </Alert>}
       {publicMode && result && <Card variant="outlined" sx={{ borderRadius: 2, bgcolor: "background.paper" }}>
         <CardContent sx={{ p: { xs: 2.5, sm: 3 }, "&:last-child": { pb: { xs: 2.5, sm: 3 } } }}>
           <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 3 }}>
