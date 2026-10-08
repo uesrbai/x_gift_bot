@@ -168,13 +168,18 @@ func (s *server) createLink(ctx context.Context, q manualLinkRequest, publicOwne
 	case record != nil && record.SubmittedAt != 0:
 		reason, o = "submitted_order", failed(409, "原付款尚未确认可以重建，请先核实原付款结果。")
 	default:
-		reason, o = "upstream_or_order_verification", failed(502, "暂时无法生成付款链接，请稍后重试；重复请求会优先检查已有订单。")
+		// A recoverable upstream/order-verification failure is NOT a gateway
+		// failure. Returning HTTP 502 here caused Cloudflare to replace our
+		// JSON error with its own HTML page, hiding the actionable reason.
+		// 424 preserves our structured error without permitting a new order.
+		reason, o = "upstream_or_order_verification", failed(http.StatusFailedDependency, "X 或 Stripe 未能核实原订单，暂时不能安全提供付款链接。没有确认原付款状态前，请勿重复建单或支付；请查看后台订单诊断。")
 		if errors.Is(err, checkout.ErrXReadFailure) {
 			reason = "x_read_failure"
+			o.body["message"] = "读取 X 账号或套餐信息失败，尚不能核实赠送资格或订单。请检查后台 X Cookie、网络及加密诊断记录；本次不会绕过安全验证。"
 		}
 	}
 	o.body["reason_code"] = reason
-	o.body["order_check_required"] = o.status == 409 || o.status == 502
+	o.body["order_check_required"] = o.status == 409 || o.status == http.StatusFailedDependency
 	log.Printf("manual link failed: public=%t months=%d reason=%s", publicOwner != "", q.Months, reason)
 	return o
 }
@@ -187,7 +192,7 @@ func (s *server) linkResult(record *checkout.Record, publicOwner string) linkOut
 	}
 	link := checkout.CheckoutLink(record)
 	if link == "" {
-		return linkOutcome{status: 502, body: map[string]any{"message": "订单已存在但未取得有效付款链接，请先通过客户查询核实原订单；不要重复建单。", "reason_code": "link_missing", "order_check_required": true}}
+		return linkOutcome{status: http.StatusConflict, body: map[string]any{"message": "原订单尚未核实为可安全付款，当前没有可提供的有效链接。请先通过客户查询检查原订单；不要重复建单。", "reason_code": "link_missing", "order_check_required": true}}
 	}
 	result["checkout_url"] = link
 	if publicOwner != "" {
