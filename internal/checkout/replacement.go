@@ -137,17 +137,17 @@ func prepareRecoveryLink(ctx context.Context, v *vault.Vault, r *Record, s *stri
 				}
 			}
 			if !explicitExpiredUnpaid {
-			if err = eligible(); err != nil {
-				return r, err
-			}
-			if err = rememberVerifiedCheckout(v, r, plan, page); err != nil {
-				return r, err
-			}
-			r.LinkBlocked = false
-			if err = save(v, r); err != nil {
-				return r, err
-			}
-			return r, holdPublicCheckout(v, r, plan, time.Now())
+				if err = eligible(); err != nil {
+					return r, err
+				}
+				if err = rememberVerifiedCheckout(v, r, plan, page); err != nil {
+					return r, err
+				}
+				r.LinkBlocked = false
+				if err = save(v, r); err != nil {
+					return r, err
+				}
+				return r, holdPublicCheckout(v, r, plan, time.Now())
 			}
 		}
 	} else {
