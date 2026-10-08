@@ -53,6 +53,7 @@ type Batch = {
   id: string;
   state: string;
   created: number;
+  started_at?: number;
   updated?: number;
   last4: string;
   cards?: number;
@@ -107,7 +108,7 @@ function BatchDetails({ batch }: { batch: Batch }) {
       <Typography variant="body2">{batch.mode === "links" ? "仅生成补单链接" : batch.mode === "auto_fallback" ? (batch.auto_available ? "自动付款优先 · 安全失败后手动链接" : "无可用付款卡 · 仅准备手动链接") : batch.cards && batch.cards > 1 ? `付款卡 ${batch.cards} 张随机轮换（当前尾号 ${batch.last4}）` : `付款卡尾号 ${batch.last4}`} · {resultSummary(batch.items)}</Typography>
     </Stack>
     <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-      创建于 {taskTime(batch.created)} · 更新于 {taskTime(batch.updated || batch.created)}
+      创建于 {taskTime(batch.created)} · {batch.started_at ? `已启动于 ${taskTime(batch.started_at)}` : "尚未启动（只是预览）"} · 更新于 {taskTime(batch.updated || batch.created)}
     </Typography>
     <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>{batch.message}</Typography>
     {batch.items.length > 0 && <Orders items={batch.items} />}
@@ -433,6 +434,11 @@ export function RecoveryPanel({
         </Box>
         {batch && active && !statusError && (
           <Box sx={{ mt: 2 }}>
+            {batch.state === "running" && batch.items.some(i => i.state === "pending") && !batch.items.some(i => i.state === "running") && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                后端已接受启动请求，任务正在等待处理下一笔订单；「待处理」不会单独变成付款链接。请查看下方批次状态，遇到「已停止」或「待核实」时不要重复付款。
+              </Alert>
+            )}
             <BatchDetails batch={batch} />
           </Box>
         )}
@@ -546,6 +552,20 @@ export function RecoveryPanel({
                     : "我已核对客户、套餐、账单金额和付款卡，确认启动本批次付款。"
               }
             />
+            {batch?.state === "preview" && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                当前只是订单预览，表格里的「待处理」不代表后台已经开始。勾选确认后，必须点击下方启动按钮；成功启动后这里会关闭，后台状态会从「待确认」变成「处理中」。
+              </Alert>
+            )}
+            {error && (
+              <Alert severity="error" role="alert" sx={{ mt: 2 }}>
+                <Typography fontWeight={700} variant="body2">启动未成功，当前仍是预览状态</Typography>
+                <Typography variant="body2">{error}</Typography>
+                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                  如提示通道被占用或订单记录变化，请按提示处理；未成功启动前不会自动付款，也不会自动生成手动链接。
+                </Typography>
+              </Alert>
+            )}
           </DialogContent>
           <DialogActions>
             <Button disabled={busy} onClick={() => setOpen(false)}>

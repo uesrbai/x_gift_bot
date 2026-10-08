@@ -33,6 +33,7 @@ type recoveryBatch struct {
 	VerifiedUnpaid bool           `json:"verified_unpaid"`
 	ID             string         `json:"id"`
 	State          string         `json:"state"`
+	StartedAt      int64          `json:"started_at,omitempty"`
 	Created        int64          `json:"created"`
 	Updated        int64          `json:"updated"`
 	Last4          string         `json:"last4"`
@@ -320,7 +321,13 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q.State != "preview" {
-		reply(w, 200, map[string]any{"batch": s.recoveryView(q)})
+		if q.State == "running" || q.State == "stopping" {
+			// An already accepted start is idempotent: never schedule another
+			// worker or submit a second payment.
+			reply(w, 200, map[string]any{"batch": s.recoveryView(q)})
+			return
+		}
+		message(w, 409, "这个补单预览已经结束、停止或被中断，请重新预览后再启动；当前没有启动新的付款。")
 		return
 	}
 	// A pay-only preview from an older deployment has no auto-availability
@@ -335,7 +342,7 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 	}
 	release, ok := s.tryLock()
 	if !ok {
-		message(w, 409, "当前有订单处理中，请稍后再试。")
+		message(w, 409, "当前付款通道正在处理其他订单，补单预览尚未启动、没有新增付款。请稍后重新进入预览。")
 		return
 	}
 	handed := false
@@ -359,8 +366,12 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		current, e := s.recoveryCandidate(item.ID)
-		if e != nil || current != item {
-			message(w, 409, "订单状态已变化，请重新预览。")
+		if e != nil {
+			message(w, 503, "无法重新核对订单状态，请稍后再试；当前预览尚未启动。")
+			return
+		}
+		if !recoverySnapshotMatches(item, current) {
+			message(w, 409, "原订单记录或付款证据已变化，请重新预览后再启动；本次未执行付款。")
 			return
 		}
 		count++
@@ -379,6 +390,7 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q.VerifiedUnpaid = in.VerifiedUnpaid
+	q.StartedAt = time.Now().Unix()
 	q.State = "running"
 	q.Message = "管理员已确认，正在逐笔核验和补单。"
 	if q.Mode == "auto_fallback" { q.Message = "自动付款优先；只有安全核验通过，才会提供手动链接。" }
@@ -539,8 +551,11 @@ func (s *server) recoverOne(item recoveryItem, binding, mode string, verified, a
 		}
 	}
 	checked, err := s.recoveryCandidate(item.ID)
-	if err != nil || checked != item {
-		return "skipped", "原订单状态已变化，请重新核实", false
+	if err != nil {
+		return "blocked", "执行前无法读取原订单，已停止；请检查加密记录。", true
+	}
+	if !recoverySnapshotMatches(item, checked) {
+		return "skipped", "执行前原订单证据已变化，请重新预览；本次未执行付款。", false
 	}
 	beforeRaw, readErr := s.vault.Get("checkout:" + item.Recipient)
 	if readErr != nil {
