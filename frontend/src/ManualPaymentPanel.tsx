@@ -11,7 +11,7 @@ import { readQueueWithReconnect } from "./queueReconnect";
 import { PublicOrderLookup } from "./PublicOrderLookup";
 
 type Plan = { months: number; amount: number; currency: string };
-type Result = Plan & { username: string; status: string; checkout_url?: string; expires_at?: number; message?: string; needs_unpaid_verification?: boolean; ticket?: string; position?: number; ahead?: number; estimated_wait_seconds?: number };
+type Result = Plan & { username: string; status: string; checkout_url?: string; expires_at?: number; message?: string; needs_unpaid_verification?: boolean; reason_code?: string; order_check_required?: boolean; ticket?: string; position?: number; ahead?: number; estimated_wait_seconds?: number };
 // expires_at is set once a link is delivered: refresh recovers it only during the payment window.
 type QueueSession = { ticket: string; username: string; months: number; expires_at?: number };
 const queueStorageKey = "xgift-public-queue";
@@ -41,6 +41,7 @@ export function ManualPaymentPanel({ publicMode = false, onShow }: { publicMode?
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [diagnostic, setDiagnostic] = useState<{ reason: string; check: boolean } | null>(null);
   const [planError, setPlanError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [needsVerification, setNeedsVerification] = useState(false);
@@ -151,7 +152,7 @@ export function ManualPaymentPanel({ publicMode = false, onShow }: { publicMode?
     usernameInput.current?.focus({ preventScroll: true });
     if (publicMode) errorAlert.current?.scrollIntoView({ block: "nearest" });
   }, [busy, error]);
-  function reset() { if (publicMode) saveQueue(null); setResult(null); setError(""); setNotice(""); setNeedsVerification(false); setVerified(false); }
+  function reset() { setDiagnostic(null); if (publicMode) saveQueue(null); setResult(null); setError(""); setNotice(""); setNeedsVerification(false); setVerified(false); }
   async function enableNotification() {
     if (!("Notification" in window)) { setNotice("此浏览器不支持系统通知，请保持页面打开，链接生成后页面标题也会提醒。"); return; }
     try { const permission = await Notification.requestPermission(); if (permission === "granted" && "serviceWorker" in navigator) await navigator.serviceWorker.register("/payment-notifications.js"); setNotifyReady(permission === "granted"); setNotice(permission === "granted" ? "已开启链接就绪通知，请保持网页打开。" : "未开启系统通知，请留意此页面的排队进度。"); } catch { setNotice("暂时无法开启系统通知，请留意此页面。"); }
@@ -160,7 +161,7 @@ export function ManualPaymentPanel({ publicMode = false, onShow }: { publicMode?
     const selectedPlan = restoredPlan ?? plans.find((p) => p.months === months);
     const user = resume?.username ?? cleanUser;
     if (inFlight.current || !/^[a-z0-9_]{1,15}$/.test(user) || !selectedPlan) return;
-    inFlight.current = true; setBusy(true); setError(""); setNotice(""); setResult(null); setQueueProgress({ status: "submitting" });
+    inFlight.current = true; setBusy(true); setError(""); setDiagnostic(null); setNotice(""); setResult(null); setQueueProgress({ status: "submitting" });
     const controller = new AbortController();
     activeRequest.current = controller;
     if (resume) queueTicket.current = resume.ticket; else saveQueue(null);
@@ -186,7 +187,7 @@ export function ManualPaymentPanel({ publicMode = false, onShow }: { publicMode?
       if (!ok) saveQueue(null);
       // The previous link already ended (paid or expired): show the clean form.
       if (!ok && status === 410) return;
-      if (!ok) { setNeedsVerification(Boolean(data?.needs_unpaid_verification)); setError(data?.message || "生成失败，请稍后重试。"); return; }
+      if (!ok) { setNeedsVerification(Boolean(data?.needs_unpaid_verification)); setDiagnostic(data?.reason_code ? { reason: data.reason_code, check: Boolean(data.order_check_required) } : null); setError(data?.message || "生成失败，请稍后重试。"); return; }
       // A 2xx may only acknowledge a queue ticket; render only a real order.
       if (data.ticket || (data.status !== "succeeded" && typeof data.checkout_url !== "string")) {
         setError("尚未取得完整的付款订单，请刷新页面后重试。系统会先检查已有链接。"); return;
@@ -208,7 +209,7 @@ export function ManualPaymentPanel({ publicMode = false, onShow }: { publicMode?
           } catch { setNotice("系统通知未能显示，请留意此页面的订单状态。"); } })();
         }
       }
-    } catch (e) { if (!controller.signal.aborted) setError((e as Error).name === "TimeoutError" ? "请求超时，请使用同一用户名和套餐重试，系统会检查已有订单。" : "连接暂时中断，请刷新页面恢复原排队；无需重新生成订单。"); }
+    } catch (e) { if (!controller.signal.aborted) { setDiagnostic({reason:"gateway_or_network_failure",check:true}); setError((e as Error).name === "TimeoutError" ? "请求超时，订单状态尚不明确。请先按客户查询核实，不要重复建单。" : "服务器连接失败或网关返回非 JSON 错误，订单状态尚不明确。请先按客户查询核实，不要重复建单。"); } }
     finally { if (activeRequest.current === controller) { inFlight.current = false; setBusy(false); setQueueProgress({ status: "submitting" }); activeRequest.current = null; queueTicket.current = null; } }
   }
   async function copy() {
