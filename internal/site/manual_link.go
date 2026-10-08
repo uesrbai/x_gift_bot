@@ -171,6 +171,8 @@ func (s *server) createLink(ctx context.Context, q manualLinkRequest, publicOwne
 			reason = "x_read_failure"
 		}
 	}
+	o.body["reason_code"] = reason
+	o.body["order_check_required"] = o.status == 409 || o.status == 502
 	log.Printf("manual link failed: public=%t months=%d reason=%s", publicOwner != "", q.Months, reason)
 	return o
 }
@@ -183,7 +185,7 @@ func (s *server) linkResult(record *checkout.Record, publicOwner string) linkOut
 	}
 	link := checkout.CheckoutLink(record)
 	if link == "" {
-		return failed(502, "未取得有效付款链接。")
+		return linkOutcome{status: 502, body: map[string]any{"message": "订单已存在但未取得有效付款链接，请先通过客户查询核实原订单；不要重复建单。", "reason_code": "link_missing", "order_check_required": true}}
 	}
 	result["checkout_url"] = link
 	if publicOwner != "" {
