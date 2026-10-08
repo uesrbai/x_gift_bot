@@ -206,7 +206,7 @@ export function CustomerPanel({
                   此历史兑换码仅保存了校验值，无法还原完整内容。
                   {detail.can_recover && "仍可按此客户订单单独补单。"}
                 </Alert>
-              )}
+              ) : null}
               {notice && <Alert severity="info" role="status">{notice}</Alert>}
               {detail.checkout_url && (
                 <>
