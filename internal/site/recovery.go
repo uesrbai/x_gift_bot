@@ -33,6 +33,7 @@ type recoveryBatch struct {
 	VerifiedUnpaid bool           `json:"verified_unpaid"`
 	ID             string         `json:"id"`
 	State          string         `json:"state"`
+	StartedAt      int64          `json:"started_at,omitempty"`
 	Created        int64          `json:"created"`
 	Updated        int64          `json:"updated"`
 	Last4          string         `json:"last4"`
@@ -383,6 +384,7 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q.VerifiedUnpaid = in.VerifiedUnpaid
+	q.StartedAt = time.Now().Unix()
 	q.State = "running"
 	q.Message = "管理员已确认，正在逐笔核验和补单。"
 	if q.Mode == "auto_fallback" { q.Message = "自动付款优先；只有安全核验通过，才会提供手动链接。" }
