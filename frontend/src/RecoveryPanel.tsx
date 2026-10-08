@@ -53,6 +53,7 @@ type Batch = {
   id: string;
   state: string;
   created: number;
+  started_at?: number;
   updated?: number;
   last4: string;
   cards?: number;
@@ -107,7 +108,7 @@ function BatchDetails({ batch }: { batch: Batch }) {
       <Typography variant="body2">{batch.mode === "links" ? "仅生成补单链接" : batch.mode === "auto_fallback" ? (batch.auto_available ? "自动付款优先 · 安全失败后手动链接" : "无可用付款卡 · 仅准备手动链接") : batch.cards && batch.cards > 1 ? `付款卡 ${batch.cards} 张随机轮换（当前尾号 ${batch.last4}）` : `付款卡尾号 ${batch.last4}`} · {resultSummary(batch.items)}</Typography>
     </Stack>
     <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-      创建于 {taskTime(batch.created)} · 更新于 {taskTime(batch.updated || batch.created)}
+      创建于 {taskTime(batch.created)} · {batch.started_at ? `已启动于 ${taskTime(batch.started_at)}` : "尚未启动（只是预览）"} · 更新于 {taskTime(batch.updated || batch.created)}
     </Typography>
     <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>{batch.message}</Typography>
     {batch.items.length > 0 && <Orders items={batch.items} />}
