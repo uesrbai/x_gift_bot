@@ -104,10 +104,8 @@ func SelectXAuthProfile(v *vault.Vault) (XAuthProfile, error) {
 	})
 	idx := available[0]
 	profiles[idx].LastUsed = now
-	if profiles[idx].ID != "legacy" {
-		if err := SaveXAuthProfiles(v, profiles); err != nil {
-			return XAuthProfile{}, err
-		}
+	if err := SaveXAuthProfiles(v, profiles); err != nil {
+		return XAuthProfile{}, err
 	}
 	return profiles[idx], nil
 }
