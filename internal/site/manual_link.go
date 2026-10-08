@@ -196,6 +196,7 @@ func (s *server) createLink(ctx context.Context, q manualLinkRequest, publicOwne
 	// X/Stripe error may contain session or request data and stays private.
 	if publicOwner == "" {
 		o.body["failure_stage"] = stage
+		o.body["verification_detail"] = checkout.ManualLinkFailureDetail(err)
 	}
 	log.Printf("manual link failed: public=%t months=%d reason=%s stage=%s", publicOwner != "", q.Months, reason, stage)
 	return o
