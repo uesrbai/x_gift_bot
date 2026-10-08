@@ -34,6 +34,14 @@ func manualLinkStage(stage string, err error) error {
 // ManualLinkStripeResponse reports fixed, non-secret Stripe diagnostics.
 // Stripe's human error message, request URL, checkout ID, keys and payment
 // credentials are intentionally never sent to the browser.
+// ManualLinkReadOnlyResponse exposes sanitized GET evidence when the
+// original Stripe session also could not be retrieved by its saved ID.
+func ManualLinkReadOnlyResponse(err error) (status int, typ, code string) {
+	var lookup *ExistingCheckoutLookupError
+	if !errors.As(err, &lookup) { return 0, "", "" }
+	return lookup.ReadHTTP, lookup.ReadType, lookup.ReadCode
+}
+
 func ManualLinkStripeResponse(err error) (status int, typ string, code string) {
 	var stripe *stripeError
 	if !errors.As(err, &stripe) {
@@ -47,6 +55,14 @@ func ManualLinkStripeResponse(err error) (status int, typ string, code string) {
 
 func ManualLinkFailureDetail(err error) string {
 	if err == nil { return "" }
+	var lookup *ExistingCheckoutLookupError
+	if errors.As(err, &lookup) {
+		if lookup.InitHTTP == 404 && lookup.InitCode == "resource_missing" &&
+			lookup.ReadHTTP == 404 && lookup.ReadCode == "resource_missing" {
+			return "saved_stripe_session_not_accessible"
+		}
+		return "old_session_readonly_lookup_failed"
+	}
 	switch {
 	case errors.Is(err, ErrVerifyUnpaid):
 		return "expired_unpaid_confirmation_required"
