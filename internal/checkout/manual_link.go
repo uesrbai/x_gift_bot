@@ -31,6 +31,20 @@ func manualLinkStage(stage string, err error) error {
 // upstream error bodies, checkout session IDs, request IDs or card data to the
 // browser. These codes distinguish a verified old-session refusal from a
 // transport failure or a saved-order identity mismatch.
+// ManualLinkStripeResponse reports fixed, non-secret Stripe diagnostics.
+// Stripe's human error message, request URL, checkout ID, keys and payment
+// credentials are intentionally never sent to the browser.
+func ManualLinkStripeResponse(err error) (status int, typ string, code string) {
+	var stripe *stripeError
+	if !errors.As(err, &stripe) {
+		return 0, "", ""
+	}
+	if stripe.HTTP >= 100 && stripe.HTTP <= 599 {
+		status = stripe.HTTP
+	}
+	return status, safeErrorField(stripe.Type), safeErrorField(stripe.Code)
+}
+
 func ManualLinkFailureDetail(err error) string {
 	if err == nil { return "" }
 	switch {
