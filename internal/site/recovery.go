@@ -321,7 +321,13 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q.State != "preview" {
-		reply(w, 200, map[string]any{"batch": s.recoveryView(q)})
+		if q.State == "running" || q.State == "stopping" {
+			// An already accepted start is idempotent: never schedule another
+			// worker or submit a second payment.
+			reply(w, 200, map[string]any{"batch": s.recoveryView(q)})
+			return
+		}
+		message(w, 409, "这个补单预览已经结束、停止或被中断，请重新预览后再启动；当前没有启动新的付款。")
 		return
 	}
 	// A pay-only preview from an older deployment has no auto-availability
