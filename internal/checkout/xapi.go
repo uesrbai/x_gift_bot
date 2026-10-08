@@ -25,6 +25,15 @@ var ErrNotEligible = errors.New("recipient cannot receive Premium gifts")
 var ErrUserNotFound = errors.New("recipient was not found")
 var ErrXReadFailure = errors.New("X account or price query failed")
 
+// LookupRecipient is a read-only identity lookup. It does not require the
+// account to be eligible for a gift and never creates or confirms an order.
+func LookupRecipient(ctx context.Context, v *vault.Vault, user string, port int) (string, error) {
+	c, err := newXClient(v, port)
+	if err != nil { return "", err }
+	defer c.close()
+	return c.identity(ctx, user, false)
+}
+
 // Eligibility is read-only: it neither creates a checkout nor submits a payment.
 func Eligibility(ctx context.Context, v *vault.Vault, user string, port int) (string, error) {
 	c, err := newXClient(v, port)
