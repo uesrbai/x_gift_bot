@@ -25,7 +25,9 @@ type Detail = {
     status: string;
     message: string;
     batch: string;
-  };
+  } | null;
+  vault_orders?: { source: string; status: string; months: number; created: number; submitted: boolean; link_blocked: boolean; requires_review: boolean }[];
+  notice?: string;
   code: string;
   checkout_url: string;
   previous_checkout_url: string;
@@ -90,7 +92,8 @@ export function CustomerPanel({
   }
   function prepare(mode: "links" | "pay") {
     if (!detail) return;
-    const id = detail.order.id;
+    const id = detail.order?.id;
+    if (!id) return;
     close();
     onPrepare(id, mode);
   }
@@ -155,7 +158,7 @@ export function CustomerPanel({
       >
         <DialogTitle id="customer-title">
           {detail
-            ? detail.order.username
+            ? detail.order?.username
               ? `@${detail.order.username} 的订单`
               : "兑换码详情"
             : error
@@ -167,15 +170,19 @@ export function CustomerPanel({
           {error && <Alert severity="error" role="alert">{error}</Alert>}
           {detail && (
             <Stack spacing={2}>
-              <Typography>
+              {detail.order && <Typography>
                 {detail.order.months} 个月 · {detail.order.batch || "未分类"} ·{" "}
                 {codeStatus[detail.order.status]?.label || detail.order.status}
-              </Typography>
-              {detail.order.message && (
+              </Typography>}
+              {detail.order?.message && (
                 <Typography variant="body2" color="text.secondary">
                   {detail.order.message}
                 </Typography>
               )}
+              {detail.notice && <Alert severity="info">{detail.notice}</Alert>}
+              {detail.vault_orders?.map((record, index) => <Alert severity={record.submitted || record.requires_review ? "warning" : "info"} key={index}>
+                {record.source} · {record.months}个月 · 状态：{record.status} · {record.submitted ? "曾提交付款" : "未标记为已提交付款"} · {record.link_blocked ? "链接已阻断" : "链接状态未阻断"}
+              </Alert>)}
               {detail.code ? (
                 <>
                   <TextField
@@ -194,7 +201,7 @@ export function CustomerPanel({
                     复制完整兑换码
                   </Button>
                 </>
-              ) : (
+              ) : detail.order ? (
                 <Alert severity="info">
                   此历史兑换码仅保存了校验值，无法还原完整内容。
                   {detail.can_recover && "仍可按此客户订单单独补单。"}
@@ -235,7 +242,7 @@ export function CustomerPanel({
         </DialogContent>
         <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
           <Button onClick={close}>关闭</Button>
-          {detail?.can_recover && (
+          {detail?.can_recover && detail.order && (
             <>
               <Button variant="outlined" onClick={() => prepare("links")}>
                 仅生成补单链接
