@@ -113,3 +113,24 @@ func TestExpiredIntentNeverAutomaticallyReplaced(t *testing.T) {
 		t.Fatal("expired checkout with a payment intent must never be replaced based on checkbox")
 	}
 }
+
+func TestManualLinkFailureDetailIsAllowlisted(t *testing.T) {
+	cases := []struct {
+		err error
+		want string
+	}{
+		{ErrVerifyUnpaid, "expired_unpaid_confirmation_required"},
+		{&stripeError{Code: "checkout_not_active_session", HTTP: 400}, "stripe_session_inactive"},
+		{&stripeError{HTTP: 403}, "stripe_authorization_rejected"},
+		{&stripeError{HTTP: 500}, "stripe_upstream_unavailable"},
+		{&stripeTransportFailure{}, "stripe_network_failure"},
+		{errors.New("Stripe checkout is not open and unpaid at the exact authorized amount"), "stripe_checkout_not_open_unpaid"},
+		{errors.New("expired checkout is not conclusively unpaid"), "expired_checkout_unverified_payment"},
+		{errors.New("credentials: auth_token=not-for-user"), "order_verification_failed"},
+	}
+	for _, tc := range cases {
+		if actual := ManualLinkFailureDetail(manualLinkStage("existing_checkout_verification", tc.err)); actual != tc.want {
+			t.Fatalf("failure code %v: %s, want %s", tc.err, actual, tc.want)
+		}
+	}
+}
