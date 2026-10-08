@@ -99,7 +99,8 @@ func TestOldCheckoutFallbackNeverRetriesSensitiveStripeStatuses(t *testing.T) {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			r := &Record{SessionID:"cs_live_Test"}
 			reads := 0
-			s := &stripeClient{key:"pk_live_Test", http:&http.Client{Transport: stripeRoundTrip(func(req *http.Request) (*http.Response,error) {
+			v := controlFixture(t)
+			s := &stripeClient{vault:v, key:"pk_live_Test", http:&http.Client{Transport: stripeRoundTrip(func(req *http.Request) (*http.Response,error) {
 				if req.Method == http.MethodGet { reads++ }
 				return &http.Response{
 					StatusCode:status,
