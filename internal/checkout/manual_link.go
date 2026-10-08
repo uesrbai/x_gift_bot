@@ -10,6 +10,22 @@ import (
 )
 
 var ErrManualLinkConflict = errors.New("existing order belongs to another username or plan")
+
+// ManualLinkStageError identifies the operation that failed without exposing
+// X cookies, Stripe credentials, card details or upstream response bodies.
+// The underlying error remains available to errors.Is/As for safety checks.
+type ManualLinkStageError struct {
+	Stage string
+	Cause error
+}
+
+func (e *ManualLinkStageError) Error() string { return e.Cause.Error() }
+func (e *ManualLinkStageError) Unwrap() error { return e.Cause }
+
+func manualLinkStage(stage string, err error) error {
+	if err == nil { return nil }
+	return &ManualLinkStageError{Stage: stage, Cause: err}
+}
 var ErrPaymentActionRequired = errors.New("bank authentication required")
 
 // ManualLinkForUsername creates/reuses a guarded checkout without tokenizing or
@@ -21,19 +37,19 @@ func ManualLinkForUsername(ctx context.Context, v *vault.Vault, user string, por
 	}
 	cat, err := ReadCatalog(v)
 	if err != nil {
-		return nil, err
+		return nil, manualLinkStage("catalog", err)
 	}
 	if _, err = cat.PlanFor(months); err != nil {
-		return nil, err
+		return nil, manualLinkStage("catalog", err)
 	}
 	x, err := newXClient(v, port)
 	if err != nil {
-		return nil, err
+		return nil, manualLinkStage("x_auth", err)
 	}
 	defer x.close()
 	recipient, err := x.identity(ctx, user, false)
 	if err != nil {
-		return nil, err
+		return nil, manualLinkStage("x_identity", err)
 	}
 	return manualLinkForRecipient(ctx, v, user, recipient, port, months, verifiedUnpaid)
 }
@@ -41,23 +57,24 @@ func ManualLinkForUsername(ctx context.Context, v *vault.Vault, user string, por
 func manualLinkForRecipient(ctx context.Context, v *vault.Vault, user, recipient string, port, months int, verifiedUnpaid bool) (*Record, error) {
 	raw, err := v.Get("checkout:" + recipient)
 	if errors.Is(err, sql.ErrNoRows) {
-		return RunForRecipient(ctx, v, user, recipient, false, port, months)
+		record, createErr := RunForRecipient(ctx, v, user, recipient, false, port, months)
+		return record, manualLinkStage("new_checkout", createErr)
 	}
 	if err != nil {
-		return nil, err
+		return nil, manualLinkStage("checkout_read", err)
 	}
 	defer clear(raw)
 	var r Record
 	if err = json.Unmarshal(raw, &r); err != nil {
-		return nil, err
+		return nil, manualLinkStage("checkout_record", err)
 	}
 	cat, err := ReadCatalog(v)
 	if err != nil {
-		return nil, err
+		return nil, manualLinkStage("catalog", err)
 	}
 	plan, err := cat.PlanFor(months)
 	if err != nil {
-		return nil, err
+		return nil, manualLinkStage("catalog", err)
 	}
 	if r.Username != user || r.RecipientID != recipient || r.Months != months || r.Amount != plan.Minor || r.Currency != strings.ToUpper(plan.Currency) || r.ProductID != plan.ProductID {
 		return nil, ErrManualLinkConflict
@@ -73,9 +90,11 @@ func manualLinkForRecipient(ctx context.Context, v *vault.Vault, user, recipient
 		// Only a live Stripe confirmation of terminal cancellation can retire a
 		// challenged payment. An operator checkbox cannot override this check.
 		if err = RetireCanceledAuthentication(ctx, v, recipient); err != nil {
-			return &r, err
+			return &r, manualLinkStage("bank_auth_reconciliation", err)
 		}
-		return RunForRecipient(ctx, v, user, recipient, false, port, months)
+		next, retryErr := RunForRecipient(ctx, v, user, recipient, false, port, months)
+		return next, manualLinkStage("checkout_after_cancellation", retryErr)
 	}
-	return PrepareRecoveryLinkForRecipient(ctx, v, user, recipient, port, months, verifiedUnpaid)
+	current, verifyErr := PrepareRecoveryLinkForRecipient(ctx, v, user, recipient, port, months, verifiedUnpaid)
+	return current, manualLinkStage("existing_checkout_verification", verifyErr)
 }

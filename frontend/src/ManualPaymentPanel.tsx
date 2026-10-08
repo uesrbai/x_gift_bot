@@ -11,7 +11,7 @@ import { readQueueWithReconnect } from "./queueReconnect";
 import { PublicOrderLookup } from "./PublicOrderLookup";
 
 type Plan = { months: number; amount: number; currency: string };
-type Result = Plan & { username: string; status: string; checkout_url?: string; expires_at?: number; message?: string; needs_unpaid_verification?: boolean; reason_code?: string; order_check_required?: boolean; ticket?: string; position?: number; ahead?: number; estimated_wait_seconds?: number };
+type Result = Plan & { username: string; status: string; checkout_url?: string; expires_at?: number; message?: string; needs_unpaid_verification?: boolean; reason_code?: string; order_check_required?: boolean; failure_stage?: string; ticket?: string; position?: number; ahead?: number; estimated_wait_seconds?: number };
 // expires_at is set once a link is delivered: refresh recovers it only during the payment window.
 type QueueSession = { ticket: string; username: string; months: number; expires_at?: number };
 const queueStorageKey = "xgift-public-queue";
@@ -41,7 +41,7 @@ export function ManualPaymentPanel({ publicMode = false, onShow }: { publicMode?
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [diagnostic, setDiagnostic] = useState<{ reason: string; check: boolean } | null>(null);
+  const [diagnostic, setDiagnostic] = useState<{ reason: string; check: boolean; stage?: string } | null>(null);
   const [planError, setPlanError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [needsVerification, setNeedsVerification] = useState(false);
@@ -187,7 +187,7 @@ export function ManualPaymentPanel({ publicMode = false, onShow }: { publicMode?
       if (!ok) saveQueue(null);
       // The previous link already ended (paid or expired): show the clean form.
       if (!ok && status === 410) return;
-      if (!ok) { setNeedsVerification(Boolean(data?.needs_unpaid_verification)); setDiagnostic(data?.reason_code ? { reason: data.reason_code, check: Boolean(data.order_check_required) } : null); setError(data?.message || "生成失败，请稍后重试。"); return; }
+      if (!ok) { setNeedsVerification(Boolean(data?.needs_unpaid_verification)); setDiagnostic(data?.reason_code ? { reason: data.reason_code, check: Boolean(data.order_check_required), stage: data.failure_stage } : null); setError(data?.message || "生成失败，请稍后重试。"); return; }
       // A 2xx may only acknowledge a queue ticket; render only a real order.
       if (data.ticket || (data.status !== "succeeded" && typeof data.checkout_url !== "string")) {
         setError("尚未取得完整的付款订单，请刷新页面后重试。系统会先检查已有链接。"); return;
@@ -265,6 +265,7 @@ export function ManualPaymentPanel({ publicMode = false, onShow }: { publicMode?
         <Typography variant="body2">{error}</Typography>
         {!publicMode && diagnostic && <Box sx={{ mt: 1 }}>
           <Typography variant="body2">诊断代码：{diagnostic.reason}</Typography>
+          {diagnostic.stage && <Typography variant="body2">失败阶段：{diagnostic.stage}</Typography>}
           {diagnostic.check && <Typography variant="body2">请先使用页面上方「按客户查询」输入同一 X 用户名，查看原订单和付款状态。未确认前不要重复创建或付款。</Typography>}
         </Box>}
       </Alert>}
