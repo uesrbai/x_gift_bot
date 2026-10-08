@@ -2,6 +2,7 @@ package site
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -56,5 +57,19 @@ func TestManualLinkUnverifiedDoesNotExposeLink(t *testing.T) {
 	}
 	if _, ok := out.body["checkout_url"]; ok {
 		t.Fatal("must not expose an unverified checkout link")
+	}
+}
+
+// The checkout stage wrapper must preserve existing errors.Is classifications;
+// payment safeguards must not change when diagnostic metadata is added.
+func TestManualLinkStageErrorPreservesReason(t *testing.T) {
+	sentinel := checkout.ErrPublicLinkConflict
+	wrapped := &checkout.ManualLinkStageError{Stage: "existing_checkout_verification", Cause: sentinel}
+	if !errors.Is(wrapped, sentinel) {
+		t.Fatal("stage wrapper lost original safety sentinel")
+	}
+	var stage *checkout.ManualLinkStageError
+	if !errors.As(wrapped, &stage) || stage.Stage != "existing_checkout_verification" {
+		t.Fatalf("failure stage not available to admin: %v", stage)
 	}
 }
