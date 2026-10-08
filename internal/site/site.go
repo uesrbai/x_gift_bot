@@ -889,8 +889,14 @@ func (s *server) redeem(w http.ResponseWriter, r *http.Request) {
 	if !resuming {
 		// A prior CLI order must not fulfill a newly presented redemption code.
 		for _, key := range []string{"checkout:" + recipient, "checkout:" + user} {
-			if _, e = s.vault.Get(key); !errors.Is(e, sql.ErrNoRows) {
-				message(w, 409, "这个账号已有订单记录，需要管理员核实后处理。兑换码未使用。")
+			raw, readErr := s.vault.Get(key)
+			if readErr == nil {
+				clear(raw)
+				message(w, 409, "这个账号存在独立付款订单记录，请管理员使用「按客户查询」核实 Vault 订单。兑换码未使用。")
+				return
+			}
+			if !errors.Is(readErr, sql.ErrNoRows) {
+				message(w, 503, "加密订单记录读取失败，暂时不能确认是否已有付款；请管理员检查 Vault。兑换码未使用。")
 				return
 			}
 		}
