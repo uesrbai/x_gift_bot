@@ -187,7 +187,17 @@ func (s *server) createLink(ctx context.Context, q manualLinkRequest, publicOwne
 	}
 	o.body["reason_code"] = reason
 	o.body["order_check_required"] = o.status == 409 || o.status == http.StatusFailedDependency
-	log.Printf("manual link failed: public=%t months=%d reason=%s", publicOwner != "", q.Months, reason)
+	stage := "unknown"
+	var stageErr *checkout.ManualLinkStageError
+	if errors.As(err, &stageErr) {
+		stage = stageErr.Stage
+	}
+	// Only enumerate fixed, non-sensitive stage identifiers. The underlying
+	// X/Stripe error may contain session or request data and stays private.
+	if publicOwner == "" {
+		o.body["failure_stage"] = stage
+	}
+	log.Printf("manual link failed: public=%t months=%d reason=%s stage=%s", publicOwner != "", q.Months, reason, stage)
 	return o
 }
 
