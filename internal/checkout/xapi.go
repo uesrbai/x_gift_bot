@@ -38,6 +38,7 @@ func Eligibility(ctx context.Context, v *vault.Vault, user string, port int) (st
 func (p Plan) Name() string { return fmt.Sprintf("Premium Gift - %d months", p.Months) }
 
 type xClient struct {
+	xAuthProfileID string
 	// Set only after validating an explicitly replaced public order.
 	publicReplacement string
 	vault             *vault.Vault
@@ -58,45 +59,20 @@ func newXClient(v *vault.Vault, port int) (*xClient, error) {
 	if json.Unmarshal(raw, &auth) != nil || !strings.HasPrefix(auth.Authorization, "Bearer ") {
 		return nil, errors.New("invalid X API authentication metadata")
 	}
-	raw, e = v.Get("cookies")
+	profile, e := SelectXAuthProfile(v)
 	if e != nil {
 		return nil, e
 	}
-	defer clear(raw)
-	var state struct {
-		Cookies []struct{ Name, Value, Domain string }
-	}
-	if e = json.Unmarshal(raw, &state); e != nil {
-		return nil, e
-	}
 	h := http.Header{"Authorization": {auth.Authorization}, "User-Agent": {auth.UserAgent}, "Content-Type": {"application/json"}, "Origin": {"https://x.com"}, "X-Twitter-Auth-Type": {"OAuth2Session"}, "X-Twitter-Active-User": {"yes"}, "X-Twitter-Client-Language": {"en"}}
-	found := map[string]bool{}
-	for _, c := range state.Cookies {
-		if c.Domain != ".x.com" && c.Domain != "x.com" {
-			return nil, errors.New("unexpected cookie domain")
-		}
-		if c.Name != "auth_token" && c.Name != "ct0" {
-			return nil, errors.New("unexpected cookie name")
-		}
-		if found[c.Name] || c.Value == "" || strings.ContainsAny(c.Value, "\r\n;") {
-			return nil, errors.New("invalid X cookie")
-		}
-		found[c.Name] = true
-		h.Add("Cookie", c.Name+"="+c.Value)
-		if c.Name == "ct0" {
-			h.Set("X-Csrf-Token", c.Value)
-		}
-	}
-	if !found["ct0"] || !found["auth_token"] {
-		return nil, errors.New("required X cookies missing")
-	}
+	h.Set("Cookie", "auth_token="+profile.AuthToken+"; ct0="+profile.Ct0)
+	h.Set("X-Csrf-Token", profile.Ct0)
 	// Account checks connect directly. Regional pricing and checkout creation
 	// must share the configured exit because X prices depend on its country.
 	newClient := func(proxy func(*http.Request) (*url.URL, error)) *http.Client {
 		return &http.Client{Transport: &http.Transport{Proxy: proxy, TLSHandshakeTimeout: 15 * time.Second}, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("unexpected X API redirect") }}
 	}
 	p, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
-	return &xClient{http: newClient(nil), regionalHTTP: newClient(http.ProxyURL(p)), headers: h, vault: v}, nil
+	return &xClient{xAuthProfileID: profile.ID, http: newClient(nil), regionalHTTP: newClient(http.ProxyURL(p)), headers: h, vault: v}, nil
 }
 func (c *xClient) close() {
 	c.http.CloseIdleConnections()
