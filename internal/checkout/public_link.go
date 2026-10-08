@@ -14,6 +14,8 @@ import (
 )
 
 var ErrPublicLinkConflict = errors.New("existing checkout requires private review")
+// ErrRecipientIdentityMismatch signals inconsistent upstream identity results, not an existing local order.
+var ErrRecipientIdentityMismatch = errors.New("upstream recipient identity mismatch")
 var ErrPublicLinkPrivateOrder = fmt.Errorf("%w: private order exists", ErrPublicLinkConflict)
 var ErrPublicLinkPending = errors.New("public checkout creation returned no usable link")
 var ErrPublicPaymentDeclined = errors.New("public payment declined; rejoin queue")
@@ -108,7 +110,7 @@ func publicLinkForClient(ctx context.Context, v *vault.Vault, user, owner string
 		return nil, err
 	}
 	if checked != recipient {
-		return nil, ErrPublicLinkConflict
+		return nil, ErrRecipientIdentityMismatch
 	}
 	if err = x.quote(ctx, user, plan); err != nil {
 		return nil, err
