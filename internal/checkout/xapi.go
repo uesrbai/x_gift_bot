@@ -197,6 +197,16 @@ func (c *xClient) callOnce(ctx context.Context, user, name, id string, variables
 	}
 	audit.Phase = "response_validation"
 	if res.StatusCode != 200 {
+		if c.xAuthProfileID != "legacy" {
+			switch res.StatusCode {
+			case http.StatusUnauthorized:
+				_ = CooldownXAuthProfile(c.vault, c.xAuthProfileID, 15*time.Minute)
+			case http.StatusForbidden:
+				_ = CooldownXAuthProfile(c.vault, c.xAuthProfileID, 5*time.Minute)
+			case http.StatusTooManyRequests:
+				_ = CooldownXAuthProfile(c.vault, c.xAuthProfileID, 2*time.Minute)
+			}
+		}
 		return xHTTPFailure(fmt.Errorf("X %s returned HTTP %d; no payment attempted", name, res.StatusCode), res.StatusCode, res.Header.Get("Retry-After"), mutation)
 	}
 	var envelope struct {
