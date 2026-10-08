@@ -323,6 +323,12 @@ func (s *server) recoveryStart(w http.ResponseWriter, r *http.Request) {
 		reply(w, 200, map[string]any{"batch": s.recoveryView(q)})
 		return
 	}
+	// A pay-only preview from an older deployment has no auto-availability
+	// snapshot. Re-preview instead of executing a charge with stale consent.
+	if q.Mode == "pay" && !q.AutoAvailable {
+		message(w, 409, "请重新预览付款卡和订单后再启动自动付款。")
+		return
+	}
 	if time.Now().Unix()-q.Created > 3600 {
 		message(w, 409, "预览已过期，请重新生成。")
 		return
